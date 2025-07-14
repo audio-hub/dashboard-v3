@@ -125,6 +125,39 @@ class Dashboard {
     }
 
     /**
+     * Calculates estimated audio duration from file size
+     * UPDATED: Changed from 128kbps to 96kbps
+     * @param {number} fileSizeBytes - File size in bytes
+     * @param {number} bitrateKbps - Bitrate in kbps (default 96 for AAC, changed from 128)
+     * @returns {string} Formatted duration string
+     */
+    calculateAudioDuration(fileSizeBytes, bitrateKbps = 96) {
+        if (!fileSizeBytes || fileSizeBytes <= 0) return null;
+        
+        // Formula: Duration (seconds) = (File Size in bytes × 8) / (Bitrate in bits per second)
+        const durationSeconds = (fileSizeBytes * 8) / (bitrateKbps * 1000);
+        
+        return this.formatDurationFromSeconds(durationSeconds);
+    }
+
+    /**
+     * Formats duration from seconds to human readable format
+     * @param {number} durationSeconds - Duration in seconds
+     * @returns {string} Formatted duration string with ~ prefix
+     */
+    formatDurationFromSeconds(durationSeconds) {
+        const minutes = Math.floor(durationSeconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        
+        if (hours > 0) {
+            return `~${hours}h ${remainingMinutes}m`;
+        } else {
+            return `~${minutes}m`;
+        }
+    }
+
+    /**
      * Loads statistics from the API and displays them.
      */
     async loadStats() {
@@ -487,12 +520,24 @@ class Dashboard {
         const relevantDate = this.getRelevantDate(space);
         const timeAgo = this.formatTimeDisplay(space, relevantDate).replace('Started', 'Live for').replace('Ended', 'Ended');
 
-        // Create a compact metadata string
+        // Create a compact metadata string with audio duration
         const metaParts = [];
         metaParts.push(space.host || 'Unknown Host');
         if (space.participantCount > 0) {
             metaParts.push(`${space.participantCount} listeners`);
         }
+        
+        // Add audio duration if available
+        if (audioFiles && audioFiles.length > 0) {
+            const firstAudio = audioFiles[0];
+            if (firstAudio.size) {
+                const duration = this.calculateAudioDuration(firstAudio.size);
+                if (duration) {
+                    metaParts.push(duration);
+                }
+            }
+        }
+        
         metaParts.push(timeAgo);
         const metadataText = metaParts.join(' · ');
 
