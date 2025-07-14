@@ -508,7 +508,8 @@ class Dashboard {
             actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Download</a>`;
         }
         if (hasTranscription) {
-            actionsHTML += `<a href="${transcription.url}" target="_blank" class="btn btn-secondary">Transcript</a>`;
+            // actionsHTML += `<a href="${transcription.url}" target="_blank" class="btn btn-secondary">Transcript</a>`;
+            actionsHTML += `<a href="${space.transcriptLink}" target="_blank" class="btn btn-secondary">Transcript</a>`;
         }
         if (spaceUrl) {
             actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`;
