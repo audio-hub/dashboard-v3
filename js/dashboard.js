@@ -520,6 +520,10 @@ class Dashboard {
         const relevantDate = this.getRelevantDate(space);
         const timeAgo = this.formatTimeDisplay(space, relevantDate).replace('Started', 'Live for').replace('Ended', 'Ended');
 
+        // Trim title to max 64 characters
+        const rawTitle = space.title || 'Untitled Space';
+        const displayTitle = rawTitle.length > 64 ? rawTitle.substring(0, 60) + '...' : rawTitle;
+
         // Create a compact metadata string with audio duration
         const metaParts = [];
         metaParts.push(space.host || 'Unknown Host');
@@ -565,7 +569,7 @@ class Dashboard {
             <div class="space-item">
                 <div class="status-indicator ${statusClass}" title="${isLive ? 'Live' : 'Ended'}"></div>
                 <div class="space-details">
-                    <div class="space-title">${space.title || 'Untitled Space'}</div>
+                    <div class="space-title">${displayTitle}</div>
                     <div class="space-metadata">${metadataText}</div>
                 </div>
                 <div class="space-actions">
