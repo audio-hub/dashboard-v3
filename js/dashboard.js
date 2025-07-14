@@ -554,7 +554,7 @@ class Dashboard {
             // Use the first audio file for the primary listen button
             const firstAudio = audioFiles[0];
             const staticDownloadFilename = this.createDownloadFilename(space, firstAudio.filename);
-            actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Download</a>`;
+            actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Listen</a>`;
         }
         if (hasTranscription) {
             // actionsHTML += `<a href="${transcription.url}" target="_blank" class="btn btn-secondary">Transcript</a>`;
