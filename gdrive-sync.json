@@ -1,0 +1,64 @@
+{
+  "projectName": "dashboard-v3",
+  "projectType": "frontend",
+  "patterns": {
+    "code": [
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.css",
+      "**/*.scss",
+      "**/*.html",
+      "**/*.json",
+      "**/*.wgsl"
+    ],
+    "frontend": [
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.css",
+      "**/*.scss",
+      "**/*.html",
+      "**/*.json",
+      "**/*.wgsl"
+    ],
+    "backend": [
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.css",
+      "**/*.scss",
+      "**/*.html",
+      "**/*.json",
+      "**/*.wgsl"
+    ],
+    "assets": [
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.css",
+      "**/*.scss",
+      "**/*.html",
+      "**/*.json",
+      "**/*.wgsl"
+    ]
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.git/**",
+    "**/coverage/**",
+    "**/.cache/**",
+    "**/.vscode/**",
+    "**/.idea/**",
+    "**/cache/**",
+    "**/artifacts/**",
+    "**/abi/**",
+    "**/typechain-types/**"
+  ]
+}

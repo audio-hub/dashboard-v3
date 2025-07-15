@@ -4,6 +4,7 @@
  * ADDED: Download functionality alongside listen buttons
  * UPDATED: Changed audio bitrate assumption from 128kbps to 96kbps
  * NEW: Added transcription file mapping and display
+ * FIXED: Hide transcript button when transcriptLink is null
  */
 
 class Dashboard {
@@ -509,9 +510,13 @@ class Dashboard {
 
     /**
      * Creates HTML for a single, compact space item.
+     * UPDATED: Only show transcript button when transcriptLink is not null
      * @param {Object} space - Space object
      * @param {Array|null} audioFiles - Array of audio file objects
+     * @param {Object|null} transcription - Transcription file object
      * @param {string|null} spaceUrl - X.com URL for the space
+     * @param {Object} privacyInfo - Privacy information object
+     * @param {Object} anchorInfo - Anchor information object
      * @returns {string} HTML string for the space item
      */
     createSpaceItemHTML(space, audioFiles, transcription, spaceUrl, privacyInfo, anchorInfo) {
@@ -547,7 +552,8 @@ class Dashboard {
 
         // Determine which actions to show
         const hasAudio = audioFiles && audioFiles.length > 0;
-        const hasTranscription = transcription;
+        // FIXED: Check if transcriptLink exists and is not null
+        const hasTranscriptLink = space.transcriptLink && space.transcriptLink !== null;
 
         let actionsHTML = '';
         if (hasAudio) {
@@ -556,14 +562,13 @@ class Dashboard {
             const staticDownloadFilename = this.createDownloadFilename(space, firstAudio.filename);
             actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Listen</a>`;
         }
-        if (hasTranscription) {
-            // actionsHTML += `<a href="${transcription.url}" target="_blank" class="btn btn-secondary">Transcript</a>`;
+        // FIXED: Only show transcript button if transcriptLink is not null
+        if (hasTranscriptLink) {
             actionsHTML += `<a href="${space.transcriptLink}" target="_blank" class="btn btn-secondary">Transcript</a>`;
         }
         if (spaceUrl) {
             actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`;
         }
-
 
         return `
             <div class="space-item">
@@ -649,7 +654,6 @@ class Dashboard {
         }
     }
 }
-
 
 // Create global instance - This is CRITICAL for app.js to work
 const dashboard = new Dashboard();
