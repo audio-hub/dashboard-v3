@@ -510,7 +510,7 @@ class Dashboard {
 
     /**
      * Creates HTML for a single, compact space item.
-     * UPDATED: Only show transcript button when transcriptLink is not null
+     * UPDATED: Displays privacy and anchor information, including the anchor's role.
      * @param {Object} space - Space object
      * @param {Array|null} audioFiles - Array of audio file objects
      * @param {Object|null} transcription - Transcription file object
@@ -520,67 +520,80 @@ class Dashboard {
      * @returns {string} HTML string for the space item
      */
     createSpaceItemHTML(space, audioFiles, transcription, spaceUrl, privacyInfo, anchorInfo) {
-        const isLive = space.isLive;
-        const statusClass = isLive ? 'status-live' : 'status-ended';
+        const isLive = space.isLive; [3086]
+        const statusClass = isLive ? 'status-live' : 'status-ended'; 
         const relevantDate = this.getRelevantDate(space);
-        const timeAgo = this.formatTimeDisplay(space, relevantDate).replace('Started', 'Live for').replace('Ended', 'Ended');
+        const timeAgo = this.formatTimeDisplay(space, relevantDate).replace('Started', 'Live since').replace('Ended', 'Ended');
 
-        // Trim title to max 64 characters
-        const rawTitle = space.title || 'Untitled Space';
+        const rawTitle = space.title || 'Untitled Space'; 
         const displayTitle = rawTitle.length > 64 ? rawTitle.substring(0, 60) + '...' : rawTitle;
 
-        // Create a compact metadata string with audio duration
-        const metaParts = [];
-        metaParts.push(space.host || 'Unknown Host');
-        if (space.participantCount > 0) {
-            metaParts.push(`${space.participantCount} listeners`);
+        // Create a compact metadata string with audio duration, privacy, and anchor info
+        const metaParts = []; 
+
+        // Add host with a hyperlink to their X.com profile
+        if (space.host) {
+            const cleanHost = space.host.replace(/[@]/g, ''); 
+            const hostUrl = `https://x.com/${cleanHost}`; 
+            metaParts.push(`<a href="${hostUrl}" target="_blank">${space.host}</a>`);
+        } else {
+            metaParts.push('Unknown Host');
         }
-        
+
+        if (space.participantCount > 0) { 
+            metaParts.push(`${space.participantCount} listeners`); 
+        }
+
+        // Add Privacy Info
+        metaParts.push(`${privacyInfo.icon} ${privacyInfo.status}`);
+
+        // Add Anchor Info if it exists, including the anchor's role
+        if (anchorInfo.hasAnchor) {
+            metaParts.push(`${anchorInfo.icon} via ${anchorInfo.roleIcon} ${anchorInfo.displayText} (${anchorInfo.roleText})`);
+        }
+
         // Add audio duration if available
-        if (audioFiles && audioFiles.length > 0) {
-            const firstAudio = audioFiles[0];
-            if (firstAudio.size) {
-                const duration = this.calculateAudioDuration(firstAudio.size);
-                if (duration) {
-                    metaParts.push(duration);
+        if (audioFiles && audioFiles.length > 0) { 
+            const firstAudio = audioFiles[0]; 
+            if (firstAudio.size) { 
+                const duration = this.calculateAudioDuration(firstAudio.size); 
+                if (duration) { 
+                    metaParts.push(duration); 
                 }
             }
         }
-        
-        metaParts.push(timeAgo);
-        const metadataText = metaParts.join(' · ');
+
+        metaParts.push(timeAgo); 
+        const metadataText = metaParts.join(' · '); 
 
         // Determine which actions to show
-        const hasAudio = audioFiles && audioFiles.length > 0;
-        // FIXED: Check if transcriptLink exists and is not null
-        const hasTranscriptLink = space.transcriptLink && space.transcriptLink !== null;
+        const hasAudio = audioFiles && audioFiles.length > 0; 
+        const hasTranscriptLink = space.transcriptLink && space.transcriptLink !== null; 
 
-        let actionsHTML = '';
-        if (hasAudio) {
-            // Use the first audio file for the primary listen button
-            const firstAudio = audioFiles[0];
-            const staticDownloadFilename = this.createDownloadFilename(space, firstAudio.filename);
-            actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Listen</a>`;
+        let actionsHTML = ''; 
+        if (hasAudio) { 
+            const firstAudio = audioFiles[0]; 
+            const staticDownloadFilename = this.createDownloadFilename(space, firstAudio.filename); 
+            actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Listen</a>`; [3120]
         }
-        // FIXED: Only show transcript button if transcriptLink is not null
-        if (hasTranscriptLink) {
-            actionsHTML += `<a href="${space.transcriptLink}" target="_blank" class="btn btn-secondary">Transcript</a>`;
+        if (hasTranscriptLink) { 
+            actionsHTML += `<a href="${space.transcriptLink}" target="_blank" class="btn btn-secondary">Transcript</a>`; 
         }
-        if (spaceUrl) {
-            actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`;
+        if (spaceUrl) { 
+            actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`; 
         }
 
         return `
-            <div class="space-item">
-                <div class="status-indicator ${statusClass}" title="${isLive ? 'Live' : 'Ended'}"></div>
-                <div class="space-details">
-                    <div class="space-title">${displayTitle}</div>
-                    <div class="space-metadata">${metadataText}</div>
-                </div>
-                <div class="space-actions">
-                    ${actionsHTML}
-                </div>
+        <div class="space-item">
+            <div class="status-indicator ${statusClass}" title="${isLive ? 'Live' : 'Ended'}"></div>
+            <div class="space-details">
+                <div class="space-title">${displayTitle}</div>
+                <div class="space-metadata">${metadataText}</div>
             </div>
+            <div class="space-actions">
+                ${actionsHTML}
+            </div>
+        </div>
         `;
     }
 

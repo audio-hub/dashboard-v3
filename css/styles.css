@@ -71,9 +71,11 @@ body {
     flex-shrink: 0;
 }
 
+/* css/styles.css */
+
 .status-live {
-    background-color: #2980b9; /* Calmer blue for live */
-    box-shadow: 0 0 8px rgba(41, 128, 185, 0.7);
+  background-color: #e74c3c; /* Changed from blue to red */
+  box-shadow: 0 0 8px rgba(231, 76, 60, 0.7); /* Shadow color updated to match */
 }
 
 .status-ended {
