@@ -1,5 +1,6 @@
 /**
- * Simple multi-source audio mapper with transcription support
+ * Enhanced API Service with participants support and parallel loading
+ * Updated to fetch participants data alongside spaces
  */
 
 class ApiService {
@@ -8,6 +9,7 @@ class ApiService {
         this.s3BaseUrl = CONFIG.S3_BASE_URL;
         this.audioFilesMap = {}; // Stores arrays of audio files per spaceId
         this.transcriptionMap = {}; // Stores transcription files per spaceId
+        this.participantsCache = {}; // Cache for participants data
     }
 
     async makeRequest(endpoint) {
@@ -59,7 +61,79 @@ class ApiService {
     }
 
     async getSpaceParticipants(spaceId) {
-        return await this.makeRequest(`spaces/${spaceId}/participants`);
+        // Check cache first
+        if (this.participantsCache[spaceId]) {
+            return this.participantsCache[spaceId];
+        }
+
+        try {
+            const data = await this.makeRequest(`spaces/${spaceId}/participants`);
+            // Cache the result
+            this.participantsCache[spaceId] = data;
+            return data;
+        } catch (error) {
+            // If 404 or other error, cache null to avoid repeated requests
+            if (error.message.includes('404')) {
+                this.participantsCache[spaceId] = null;
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Enhanced method to get spaces with participants data
+     * Parallelizes participants requests for better performance
+     */
+    async getSpacesWithParticipants(filters = {}) {
+        // First get the spaces
+        const spacesData = await this.getSpaces(filters);
+        
+        if (!spacesData.data || spacesData.data.length === 0) {
+            return spacesData;
+        }
+
+        // Create parallel requests for participants
+        const participantPromises = spacesData.data.map(async (space) => {
+            try {
+                const participants = await this.getSpaceParticipants(space._id);
+                return {
+                    spaceId: space._id,
+                    participants: participants
+                };
+            } catch (error) {
+                console.warn(`Failed to fetch participants for space ${space._id}:`, error.message);
+                return {
+                    spaceId: space._id,
+                    participants: null
+                };
+            }
+        });
+
+        // Wait for all participants requests to complete
+        try {
+            const participantResults = await Promise.allSettled(participantPromises);
+            
+            // Create a map of participants by spaceId
+            const participantsMap = {};
+            participantResults.forEach((result) => {
+                if (result.status === 'fulfilled' && result.value) {
+                    participantsMap[result.value.spaceId] = result.value.participants;
+                }
+            });
+
+            // Enhance spaces data with participants
+            spacesData.data = spacesData.data.map(space => ({
+                ...space,
+                participantsData: participantsMap[space._id] || null
+            }));
+
+            console.log(`✅ Loaded ${spacesData.data.length} spaces with participant data`);
+            
+        } catch (error) {
+            console.warn('Some participant requests failed, continuing with spaces data only:', error);
+        }
+
+        return spacesData;
     }
 
     async getFiles() {
@@ -229,12 +303,36 @@ class ApiService {
         return audioFiles && audioFiles.length > 0 ? audioFiles[0] : null;
     }
 
+    /**
+     * Utility method to enhance image quality
+     * @param {string} imageUrl - Original profile image URL
+     * @returns {string} Enhanced quality image URL
+     */
+    enhanceImageQuality(imageUrl) {
+        if (!imageUrl) return null;
+        // Replace _normal. with _400x400. for better quality
+        return imageUrl.replace('_normal.', '_400x400.');
+    }
+
+    /**
+     * Gets cached participants data
+     * @param {string} spaceId - Space ID
+     * @returns {Object|null} Cached participants data or null
+     */
+    getCachedParticipants(spaceId) {
+        return this.participantsCache[spaceId] || null;
+    }
+
     getAudioFilesMap() {
         return this.audioFilesMap;
     }
 
     getTranscriptionMap() {
         return this.transcriptionMap;
+    }
+
+    getParticipantsCache() {
+        return this.participantsCache;
     }
 }
 

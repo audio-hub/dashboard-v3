@@ -1,6 +1,5 @@
 /**
- * Modal management for the Twitter Spaces Dashboard with Privacy Information and Anchor Data
- * Updated to handle host as string and display anchor information
+ * Enhanced Modal management with HTML content support and participant modal functionality
  */
 
 class ModalManager {
@@ -15,6 +14,9 @@ class ModalManager {
      * Initialize modal elements and event listeners
      */
     init() {
+        // Create modal if it doesn't exist
+        this.createModalElement();
+        
         this.modalElement = Utils.getElementById('detailModal');
         this.modalTitle = document.querySelector('#detailModal h2');
         this.modalContent = Utils.getElementById('modalContent');
@@ -35,6 +37,31 @@ class ModalManager {
     }
 
     /**
+     * Creates the modal HTML structure if it doesn't exist
+     */
+    createModalElement() {
+        if (document.getElementById('detailModal')) return;
+
+        const modalHTML = `
+            <div id="detailModal" class="modal">
+                <div class="modal-content">
+                    <span class="modal-close">&times;</span>
+                    <h2>Modal Title</h2>
+                    <div id="modalContent">Modal content goes here</div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHTML);
+
+        // Add click handler for close button
+        const closeBtn = document.querySelector('#detailModal .modal-close');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => this.close());
+        }
+    }
+
+    /**
      * Opens the modal with the given title and content.
      * @param {string} title - The title for the modal.
      * @param {string} content - The content to display in the modal.
@@ -51,6 +78,31 @@ class ModalManager {
 
         if (this.modalContent) {
             this.modalContent.textContent = content;
+        }
+
+        this.modalElement.style.display = 'flex';
+        
+        // Focus management for accessibility
+        this.modalElement.focus();
+    }
+
+    /**
+     * Opens the modal with HTML content instead of plain text
+     * @param {string} title - The title for the modal
+     * @param {string} htmlContent - The HTML content to display
+     */
+    openWithHTML(title, htmlContent) {
+        if (!this.modalElement) {
+            console.error('Modal element not found');
+            return;
+        }
+
+        if (this.modalTitle) {
+            this.modalTitle.textContent = title;
+        }
+
+        if (this.modalContent) {
+            this.modalContent.innerHTML = htmlContent;
         }
 
         this.modalElement.style.display = 'flex';
@@ -124,7 +176,7 @@ class ModalManager {
         const privacyStatus = this.getPrivacyDisplayInfo(space);
         const anchorInfo = this.getAnchorDisplayInfo(space);
         
-        // UPDATED: Handle host as string instead of object
+        // Handle host as string instead of object
         const hostDisplay = space.host || 'Unknown';
         
         const details = `
@@ -153,7 +205,7 @@ ${space.anchor ? `\nAnchor Details:
     }
 
     /**
-     * Opens modal with participants list
+     * Opens modal with participants list (legacy version for backward compatibility)
      * @param {Array} participants - Array of participants
      * @param {string} spaceTitle - Title of the space
      */
@@ -168,6 +220,71 @@ ${space.anchor ? `\nAnchor Details:
             .join('\n');
         
         this.open(`Participants in "${spaceTitle}"`, participantsList);
+    }
+
+    /**
+     * Shows enhanced participants modal with role grouping and avatars
+     * @param {Object} participantsData - Full participants data from API
+     * @param {string} spaceTitle - Title of the space
+     */
+    showParticipantsModal(participantsData, spaceTitle = 'Space') {
+        if (!participantsData || !participantsData.participants || participantsData.participants.length === 0) {
+            this.open('Participants', 'No participants found for this space');
+            return;
+        }
+
+        // Group participants by role
+        const participantsByRole = participantsData.participantsByRole || {};
+        
+        let modalContent = `<div class="participants-modal-content">`;
+        modalContent += `<h3>Participants in "${spaceTitle}"</h3>`;
+        modalContent += `<p class="participants-count">Total: ${participantsData.totalParticipants || participantsData.participants.length} participants</p>`;
+        
+        // Display by role with proper ordering
+        const roleOrder = ['host', 'co-host', 'speaker', 'listener'];
+        roleOrder.forEach(role => {
+            const roleParticipants = participantsByRole[role] || [];
+            if (roleParticipants.length > 0) {
+                const roleTitle = role === 'co-host' ? 'Co-host' : 
+                                role.charAt(0).toUpperCase() + role.slice(1);
+                modalContent += `
+                    <div class="participants-role-section">
+                        <h4>${roleTitle}s (${roleParticipants.length})</h4>
+                        <div class="participants-list">
+                `;
+                
+                roleParticipants.forEach(participant => {
+                    const profileImage = api.enhanceImageQuality(participant.profileImage) || participant.profileImage;
+                    const username = participant.username.replace('@', '');
+                    const fallbackAvatar = `data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><rect width="40" height="40" fill="%23ddd"/><text x="20" y="25" text-anchor="middle" font-size="16" fill="%23666">${participant.name.charAt(0).toUpperCase()}</text></svg>`;
+                    
+                    modalContent += `
+                        <div class="participant-item">
+                            <img src="${profileImage || fallbackAvatar}" 
+                                 alt="${participant.name}" 
+                                 class="participant-modal-avatar"
+                                 onerror="this.src='${fallbackAvatar}'">
+                            <div class="participant-info">
+                                <div class="participant-name">${participant.name}</div>
+                                <div class="participant-username">
+                                    <a href="https://x.com/${username}" target="_blank">@${username}</a>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                modalContent += `
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        
+        modalContent += `</div>`;
+        
+        // Show modal with custom HTML content
+        this.openWithHTML('Participants', modalContent);
     }
 
     /**

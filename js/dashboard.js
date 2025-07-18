@@ -1,10 +1,6 @@
 /**
- * Enhanced Dashboard management with spaceId-based MP3 mapping and transcription support
- * Updated to handle host as string, reduce auto-updates, and display anchor data
- * ADDED: Download functionality alongside listen buttons
- * UPDATED: Changed audio bitrate assumption from 128kbps to 96kbps
- * NEW: Added transcription file mapping and display
- * FIXED: Hide transcript button when transcriptLink is null
+ * Enhanced Dashboard management with participant avatars and parallel API loading
+ * Updated to display overlapping participant profile images
  */
 
 class Dashboard {
@@ -13,7 +9,6 @@ class Dashboard {
         this.statsSection = null;
         this.statsGrid = null;
         this.spacesContent = null;
-        // Removed auto-refresh related properties
 
         // Infinite scroll state
         this.currentOffset = 0;
@@ -31,7 +26,6 @@ class Dashboard {
         this.statsSection = Utils.getElementById('stats-section');
         this.statsGrid = Utils.getElementById('statsGrid');
         this.spacesContent = Utils.getElementById('spacesContent');
-        // Removed statusFilter since it's no longer needed
 
         // Set up infinite scroll
         this.setupInfiniteScroll();
@@ -57,9 +51,6 @@ class Dashboard {
 
     /**
      * Downloads an audio file with proper filename using fetch to force download
-     * @param {string} url - Audio file URL
-     * @param {string} filename - Suggested filename
-     * @param {Object} space - Space object for additional context
      */
     async downloadAudioFile(url, filename, space) {
         try {
@@ -127,10 +118,6 @@ class Dashboard {
 
     /**
      * Calculates estimated audio duration from file size
-     * UPDATED: Changed from 128kbps to 96kbps
-     * @param {number} fileSizeBytes - File size in bytes
-     * @param {number} bitrateKbps - Bitrate in kbps (default 96 for AAC, changed from 128)
-     * @returns {string} Formatted duration string
      */
     calculateAudioDuration(fileSizeBytes, bitrateKbps = 96) {
         if (!fileSizeBytes || fileSizeBytes <= 0) return null;
@@ -143,8 +130,6 @@ class Dashboard {
 
     /**
      * Formats duration from seconds to human readable format
-     * @param {number} durationSeconds - Duration in seconds
-     * @returns {string} Formatted duration string with ~ prefix
      */
     formatDurationFromSeconds(durationSeconds) {
         const minutes = Math.floor(durationSeconds / 60);
@@ -165,9 +150,6 @@ class Dashboard {
         try {
             const data = await api.getStats();
             this.displayStats(data.data);
-            // if (this.statsSection) {
-            //     this.statsSection.style.display = 'block';
-            // }
         } catch (error) {
             Utils.showMessage(`Failed to load stats: ${error.message}`);
             console.error('Stats error:', error);
@@ -176,7 +158,6 @@ class Dashboard {
 
     /**
      * Displays the fetched statistics in the dashboard.
-     * @param {Object} stats - The statistics data.
      */
     displayStats(stats) {
         if (!this.statsGrid) return;
@@ -236,8 +217,7 @@ class Dashboard {
     }
 
     /**
-     * Loads Twitter Spaces data from the API based on filters and displays them.
-     * Updated for infinite scroll - always starts fresh
+     * Loads Twitter Spaces data with participants using the enhanced API method
      */
     async loadSpaces() {
         if (!this.spacesContent) return;
@@ -247,14 +227,15 @@ class Dashboard {
         this.hasMore = true;
         this.allSpaces = [];
 
-        this.spacesContent.innerHTML = '<div class="loading">Loading spaces...</div>';
+        this.spacesContent.innerHTML = '<div class="loading">Loading spaces and participants...</div>';
 
         try {
             const filters = this.getFilterValues();
             filters.offset = 0;
             filters.limit = this.pageSize;
 
-            const data = await api.getSpaces(filters);
+            // Use the enhanced method that fetches participants in parallel
+            const data = await api.getSpacesWithParticipants(filters);
 
             this.allSpaces = data.data;
             this.currentOffset = this.pageSize;
@@ -270,7 +251,7 @@ class Dashboard {
     }
 
     /**
-     * Loads more spaces for infinite scroll
+     * Loads more spaces for infinite scroll with participants
      */
     async loadMoreSpaces() {
         if (this.isLoading || !this.hasMore) return;
@@ -282,7 +263,8 @@ class Dashboard {
             filters.offset = this.currentOffset;
             filters.limit = this.pageSize;
 
-            const data = await api.getSpaces(filters);
+            // Use the enhanced method that fetches participants in parallel
+            const data = await api.getSpacesWithParticipants(filters);
 
             if (data.data && data.data.length > 0) {
                 this.allSpaces = [...this.allSpaces, ...data.data];
@@ -305,8 +287,6 @@ class Dashboard {
 
     /**
      * Sorts spaces with live spaces first, then chronologically
-     * @param {Array<Object>} spaces - Array of space objects
-     * @returns {Array<Object>} Sorted array of spaces
      */
     sortSpaces(spaces) {
         if (!spaces || !Array.isArray(spaces)) return [];
@@ -317,8 +297,6 @@ class Dashboard {
             if (!a.isLive && b.isLive) return 1;
 
             // Second priority: Sort by date
-            // For live spaces: most recently started first
-            // For ended spaces: most recently ended first
             const dateA = this.getRelevantDate(a);
             const dateB = this.getRelevantDate(b);
 
@@ -329,54 +307,37 @@ class Dashboard {
 
     /**
      * Gets the most relevant date for sorting a space
-     * @param {Object} space - Space object
-     * @returns {string} Date string
      */
     getRelevantDate(space) {
-        // Priority order for date selection:
-        // 1. lastUpdated (most current activity)
-        // 2. endedAt (for ended spaces)
-        // 3. startedAt (when the space began)
-        // 4. createdAt (fallback)
         return space.lastUpdated ||
             space.endedAt ||
             space.startedAt ||
             space.createdAt ||
-            new Date(0).toISOString(); // Fallback to epoch if no date available
+            new Date(0).toISOString();
     }
 
     /**
      * Gets current filter values from the UI
-     * @returns {Object} Filter values
      */
     getFilterValues() {
         return {
-            // No status filter anymore - just return defaults
             limit: this.pageSize
         };
     }
 
     /**
      * Constructs X.com URL for a space
-     * @param {Object} space - Space object
-     * @returns {string|null} X.com URL or null if not constructible
      */
     getSpaceUrl(space) {
-        // Try multiple approaches to construct the URL
-
-        // Method 1: If we have a direct spaceId
         if (space.spaceId) {
             return `https://x.com/i/spaces/${space.spaceId}`;
         }
 
-        // Method 2: If we have _id that looks like a space ID
         if (space._id && space._id.length > 10) {
             return `https://x.com/i/spaces/${space._id}`;
         }
 
-        // Method 3: If we have host (now string), try to construct from that
         if (space.host) {
-            // This might not always work for ended spaces, but worth trying
             const cleanHost = space.host.replace(/[@]/g, '');
             return `https://x.com/${cleanHost}`;
         }
@@ -386,11 +347,8 @@ class Dashboard {
 
     /**
      * Determines the privacy status of a space
-     * @param {Object} space - Space object
-     * @returns {Object} Privacy information with status and badge details
      */
     getPrivacyInfo(space) {
-        // Handle new spaces with explicit private boolean
         if (typeof space.private === 'boolean') {
             return {
                 isPrivate: space.private,
@@ -401,12 +359,10 @@ class Dashboard {
             };
         }
 
-        // Fallback for older spaces without private attribute
-        // Try to infer from other indicators
         const hasRecording = space.recordingStatus || space.hlsUrl;
 
         return {
-            isPrivate: null, // Unknown
+            isPrivate: null,
             status: hasRecording ? 'Public (inferred)' : 'Unknown',
             badge: hasRecording ? 'badge-public' : 'badge-unknown',
             icon: hasRecording ? '📢' : '❓',
@@ -416,8 +372,6 @@ class Dashboard {
 
     /**
      * Gets anchor information for display
-     * @param {Object} space - Space object
-     * @returns {Object} Anchor information with display details
      */
     getAnchorInfo(space) {
         if (!space.anchor) {
@@ -430,10 +384,7 @@ class Dashboard {
             };
         }
 
-        const {
-            displayName,
-            role
-        } = space.anchor;
+        const { displayName, role } = space.anchor;
         const roleIcons = {
             hosting: '🎙️',
             speaking: '🗣️',
@@ -459,10 +410,56 @@ class Dashboard {
     }
 
     /**
-     * Enhanced space display with format-agnostic audio mapping and transcription support
-     * Updated for infinite scroll support
-     * @param {Array<Object>} spaces - An array of Twitter Space objects.
-     * @param {boolean} append - Whether to append (true) or replace (false) content
+     * Creates HTML for participant avatars with overlapping display
+     * @param {Object} participantsData - Participants data from API
+     * @param {number} maxShow - Maximum number of avatars to show (default: 5)
+     * @returns {string} HTML string for participant avatars
+     */
+    createParticipantAvatarsHTML(participantsData, maxShow = 5) {
+        if (!participantsData || !participantsData.participants || participantsData.participants.length === 0) {
+            return '<div class="participant-avatars-empty">No participants</div>';
+        }
+
+        const participants = participantsData.participants;
+        const totalCount = participants.length;
+        const showCount = Math.min(participants.length, maxShow);
+        const remainingCount = Math.max(0, totalCount - maxShow);
+
+        // Prioritize hosts and speakers first, then listeners
+        const sortedParticipants = [...participants].sort((a, b) => {
+            const roleOrder = { 'host': 0, 'co-host': 1, 'speaker': 2, 'listener': 3 };
+            return (roleOrder[a.role] || 99) - (roleOrder[b.role] || 99);
+        });
+
+        const avatarsHTML = sortedParticipants.slice(0, showCount).map((participant, index) => {
+            const profileImage = api.enhanceImageQuality(participant.profileImage) || participant.profileImage;
+            const roleClass = participant.role.replace('-', ''); // host, cohost, speaker, listener
+            const title = `${participant.name} (@${participant.username.replace('@', '')}) - ${participant.role}`;
+            
+            return `
+                <div class="participant-avatar ${roleClass}" 
+                     style="z-index: ${showCount - index};" 
+                     title="${title}">
+                    <img src="${profileImage}" 
+                         alt="${participant.name}" 
+                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22 viewBox=%220 0 40 40%22><rect width=%2240%22 height=%2240%22 fill=%22%23ddd%22/><text x=%2220%22 y=%2225%22 text-anchor=%22middle%22 font-size=%2216%22 fill=%22%23666%22>${participant.name.charAt(0).toUpperCase()}</text></svg>'">
+                </div>
+            `;
+        }).join('');
+
+        const remainingHTML = remainingCount > 0 ? 
+            `<div class="participant-avatar remaining" title="${remainingCount} more participants">+${remainingCount}</div>` : '';
+
+        return `
+            <div class="participant-avatars" title="Click to view all ${totalCount} participants">
+                ${avatarsHTML}
+                ${remainingHTML}
+            </div>
+        `;
+    }
+
+    /**
+     * Enhanced space display with participant avatars
      */
     displaySpaces(spaces, append = false) {
         if (!this.spacesContent) return;
@@ -506,42 +503,119 @@ class Dashboard {
             loadingDiv.textContent = 'Loading more spaces...';
             this.spacesContent.appendChild(loadingDiv);
         }
+
+        // Set up click handlers for participant avatars
+        this.setupParticipantClickHandlers();
     }
 
     /**
-     * Creates HTML for a single, compact space item.
-     * UPDATED: Displays privacy and anchor information, including the anchor's role.
-     * @param {Object} space - Space object
-     * @param {Array|null} audioFiles - Array of audio file objects
-     * @param {Object|null} transcription - Transcription file object
-     * @param {string|null} spaceUrl - X.com URL for the space
-     * @param {Object} privacyInfo - Privacy information object
-     * @param {Object} anchorInfo - Anchor information object
-     * @returns {string} HTML string for the space item
+     * Sets up click handlers for participant avatars to show participant modal
+     */
+    setupParticipantClickHandlers() {
+        const participantAvatars = this.spacesContent.querySelectorAll('.participant-avatars');
+        participantAvatars.forEach(avatarsContainer => {
+            avatarsContainer.addEventListener('click', (e) => {
+                const spaceItem = avatarsContainer.closest('.space-item');
+                if (spaceItem) {
+                    const spaceId = spaceItem.dataset.spaceId;
+                    const spaceTitle = spaceItem.querySelector('.space-title').textContent;
+                    if (spaceId) {
+                        this.showParticipantsModal(spaceId, spaceTitle);
+                    }
+                }
+            });
+        });
+    }
+
+    /**
+     * Shows participants modal for a space
+     * @param {string} spaceId - Space ID
+     * @param {string} spaceTitle - Space title
+     */
+    async showParticipantsModal(spaceId, spaceTitle) {
+        const participantsData = api.getCachedParticipants(spaceId);
+        
+        if (!participantsData || !participantsData.participants) {
+            Utils.showMessage('No participant data available for this space');
+            return;
+        }
+
+        // Group participants by role
+        const participantsByRole = participantsData.participantsByRole || {};
+        
+        let modalContent = `<div class="participants-modal-content">`;
+        modalContent += `<h3>Participants in "${spaceTitle}"</h3>`;
+        modalContent += `<p class="participants-count">Total: ${participantsData.totalParticipants || participantsData.participants.length} participants</p>`;
+        
+        // Display by role
+        ['host', 'co-host', 'speaker', 'listener'].forEach(role => {
+            const roleParticipants = participantsByRole[role] || [];
+            if (roleParticipants.length > 0) {
+                const roleTitle = role.charAt(0).toUpperCase() + role.slice(1).replace('-', ' ');
+                modalContent += `
+                    <div class="participants-role-section">
+                        <h4>${roleTitle}s (${roleParticipants.length})</h4>
+                        <div class="participants-list">
+                `;
+                
+                roleParticipants.forEach(participant => {
+                    const profileImage = api.enhanceImageQuality(participant.profileImage) || participant.profileImage;
+                    const username = participant.username.replace('@', '');
+                    modalContent += `
+                        <div class="participant-item">
+                            <img src="${profileImage}" 
+                                 alt="${participant.name}" 
+                                 class="participant-modal-avatar"
+                                 onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22 viewBox=%220 0 40 40%22><rect width=%2240%22 height=%2240%22 fill=%22%23ddd%22/><text x=%2220%22 y=%2225%22 text-anchor=%22middle%22 font-size=%2216%22 fill=%22%23666%22>${participant.name.charAt(0).toUpperCase()}</text></svg>'">
+                            <div class="participant-info">
+                                <div class="participant-name">${participant.name}</div>
+                                <div class="participant-username">
+                                    <a href="https://x.com/${username}" target="_blank">@${username}</a>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                modalContent += `
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        
+        modalContent += `</div>`;
+        
+        // Show modal with custom content
+        modal.openWithHTML('Participants', modalContent);
+    }
+
+    /**
+     * Creates HTML for a single space item with participant avatars
      */
     createSpaceItemHTML(space, audioFiles, transcription, spaceUrl, privacyInfo, anchorInfo) {
-        const isLive = space.isLive; [3086]
-        const statusClass = isLive ? 'status-live' : 'status-ended'; 
+        const isLive = space.isLive;
+        const statusClass = isLive ? 'status-live' : 'status-ended';
         const relevantDate = this.getRelevantDate(space);
         const timeAgo = this.formatTimeDisplay(space, relevantDate).replace('Started', 'Live since').replace('Ended', 'Ended');
 
-        const rawTitle = space.title || 'Untitled Space'; 
+        const rawTitle = space.title || 'Untitled Space';
         const displayTitle = rawTitle.length > 64 ? rawTitle.substring(0, 60) + '...' : rawTitle;
 
         // Create a compact metadata string with audio duration, privacy, and anchor info
-        const metaParts = []; 
+        const metaParts = [];
 
         // Add host with a hyperlink to their X.com profile
         if (space.host) {
-            const cleanHost = space.host.replace(/[@]/g, ''); 
-            const hostUrl = `https://x.com/${cleanHost}`; 
+            const cleanHost = space.host.replace(/[@]/g, '');
+            const hostUrl = `https://x.com/${cleanHost}`;
             metaParts.push(`<a href="${hostUrl}" target="_blank">${space.host}</a>`);
         } else {
             metaParts.push('Unknown Host');
         }
 
-        if (space.participantCount > 0) { 
-            metaParts.push(`${space.participantCount} listeners`); 
+        if (space.participantCount > 0) {
+            metaParts.push(`${space.participantCount} listeners`);
         }
 
         // Add Privacy Info
@@ -553,42 +627,46 @@ class Dashboard {
         }
 
         // Add audio duration if available
-        if (audioFiles && audioFiles.length > 0) { 
-            const firstAudio = audioFiles[0]; 
-            if (firstAudio.size) { 
-                const duration = this.calculateAudioDuration(firstAudio.size); 
-                if (duration) { 
-                    metaParts.push(duration); 
+        if (audioFiles && audioFiles.length > 0) {
+            const firstAudio = audioFiles[0];
+            if (firstAudio.size) {
+                const duration = this.calculateAudioDuration(firstAudio.size);
+                if (duration) {
+                    metaParts.push(duration);
                 }
             }
         }
 
-        metaParts.push(timeAgo); 
-        const metadataText = metaParts.join(' · '); 
+        metaParts.push(timeAgo);
+        const metadataText = metaParts.join(' · ');
 
         // Determine which actions to show
-        const hasAudio = audioFiles && audioFiles.length > 0; 
-        const hasTranscriptLink = space.transcriptLink && space.transcriptLink !== null; 
+        const hasAudio = audioFiles && audioFiles.length > 0;
+        const hasTranscriptLink = space.transcriptLink && space.transcriptLink !== null;
 
-        let actionsHTML = ''; 
-        if (hasAudio) { 
-            const firstAudio = audioFiles[0]; 
-            const staticDownloadFilename = this.createDownloadFilename(space, firstAudio.filename); 
-            actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Listen</a>`; [3120]
+        let actionsHTML = '';
+        if (hasAudio) {
+            const firstAudio = audioFiles[0];
+            const staticDownloadFilename = this.createDownloadFilename(space, firstAudio.filename);
+            actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Listen</a>`;
         }
-        if (hasTranscriptLink) { 
-            actionsHTML += `<a href="${space.transcriptLink}" target="_blank" class="btn btn-secondary">Transcript</a>`; 
+        if (hasTranscriptLink) {
+            actionsHTML += `<a href="${space.transcriptLink}" target="_blank" class="btn btn-secondary">Transcript</a>`;
         }
-        if (spaceUrl) { 
-            actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`; 
+        if (spaceUrl) {
+            actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`;
         }
+
+        // Create participant avatars HTML
+        const participantAvatarsHTML = this.createParticipantAvatarsHTML(space.participantsData);
 
         return `
-        <div class="space-item">
+        <div class="space-item" data-space-id="${space._id}">
             <div class="status-indicator ${statusClass}" title="${isLive ? 'Live' : 'Ended'}"></div>
             <div class="space-details">
                 <div class="space-title">${displayTitle}</div>
                 <div class="space-metadata">${metadataText}</div>
+                ${participantAvatarsHTML}
             </div>
             <div class="space-actions">
                 ${actionsHTML}
@@ -599,10 +677,6 @@ class Dashboard {
 
     /**
      * Creates a descriptive filename for downloads
-     * @param {Object} space - Space object for context
-     * @param {string} originalFilename - Original filename from server
-     * @param {number} index - Index for multiple files (optional)
-     * @returns {string} Formatted download filename
      */
     createDownloadFilename(space, originalFilename, index = null) {
         const hostSlug = Utils.slugify(space.host || 'unknown');
@@ -656,7 +730,6 @@ class Dashboard {
 
     /**
      * Fetches and displays detailed information for a specific space.
-     * @param {string} spaceId - The ID of the space to view.
      */
     async viewSpaceDetails(spaceId) {
         try {
