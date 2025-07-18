@@ -406,4 +406,36 @@ body {
 
     /* Adjust participant avatars for mobile */
     .participant-avatar {
-        width: 24
+        width: 24px;
+        height: 24px;
+        margin-left: -6px;
+    }
+
+    .participant-avatar:first-child {
+        margin-left: 0;
+    }
+
+    .participant-avatars {
+        margin-top: 8px;
+    }
+
+    /* Modal adjustments for mobile */
+    .modal-content {
+        width: 95%;
+        margin: 10px;
+        max-height: 90vh;
+    }
+
+    .participants-modal-content {
+        max-height: 80vh;
+    }
+
+    .participant-item {
+        padding: 6px;
+    }
+
+    .participant-modal-avatar {
+        width: 32px;
+        height: 32px;
+    }
+}
