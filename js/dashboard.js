@@ -425,21 +425,46 @@ class Dashboard {
         const showCount = Math.min(participants.length, maxShow);
         const remainingCount = Math.max(0, totalCount - maxShow);
 
-        // Prioritize hosts and speakers first, then listeners
+        // FIXED: Explicit role-based sorting with debug logging
+        const roleOrder = { 'host': 0, 'co-host': 1, 'speaker': 2, 'listener': 3 };
         const sortedParticipants = [...participants].sort((a, b) => {
-            const roleOrder = { 'host': 0, 'co-host': 1, 'speaker': 2, 'listener': 3 };
-            return (roleOrder[a.role] || 99) - (roleOrder[b.role] || 99);
+            const roleA = (a.role || '').toLowerCase();
+            const roleB = (b.role || '').toLowerCase();
+            const priorityA = roleOrder[roleA] !== undefined ? roleOrder[roleA] : 99;
+            const priorityB = roleOrder[roleB] !== undefined ? roleOrder[roleB] : 99;
+            
+            // Debug: Log the sorting if there are multiple roles
+            if (participants.length > 1) {
+                console.log(`Sorting: ${a.name} (${roleA}, priority ${priorityA}) vs ${b.name} (${roleB}, priority ${priorityB})`);
+            }
+            
+            return priorityA - priorityB;
         });
+
+        // Debug: Log final order
+        if (sortedParticipants.length > 1) {
+            console.log('Final participant order:', sortedParticipants.map(p => `${p.name} (${p.role})`).join(' → '));
+        }
 
         const avatarsHTML = sortedParticipants.slice(0, showCount).map((participant, index) => {
             const profileImage = api.enhanceImageQuality(participant.profileImage) || participant.profileImage;
-            const roleClass = participant.role.replace('-', ''); // host, cohost, speaker, listener
+            
+            // FIXED: Normalize role for CSS class and ensure proper mapping
+            const normalizedRole = (participant.role || '').toLowerCase().replace('-', '').replace('co-host', 'cohost');
+            const roleClass = normalizedRole || 'listener'; // Default to listener if no role
+            
             const title = `${participant.name} (@${participant.username.replace('@', '')}) - ${participant.role}`;
+            
+            // FIXED: Higher z-index for more important roles (host gets highest z-index)
+            const baseZIndex = 100;
+            const roleZIndex = baseZIndex + (showCount - index) + (roleOrder[participant.role?.toLowerCase()] !== undefined ? (3 - roleOrder[participant.role.toLowerCase()]) * 10 : 0);
             
             return `
                 <div class="participant-avatar ${roleClass}" 
-                     style="z-index: ${showCount - index};" 
-                     title="${title}">
+                     style="z-index: ${roleZIndex};" 
+                     title="${title}"
+                     data-role="${participant.role}"
+                     data-index="${index}">
                     <img src="${profileImage}" 
                          alt="${participant.name}" 
                          onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22 viewBox=%220 0 40 40%22><rect width=%2240%22 height=%2240%22 fill=%22%23ddd%22/><text x=%2220%22 y=%2225%22 text-anchor=%22middle%22 font-size=%2216%22 fill=%22%23666%22>${participant.name.charAt(0).toUpperCase()}</text></svg>'">
