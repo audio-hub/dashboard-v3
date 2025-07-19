@@ -157,22 +157,26 @@ class ApiService {
     /**
      * Process participant queue serially (one at a time)
      */
-    async processParticipantQueue() {
-        if (this.isLoadingParticipants || this.participantQueue.length === 0) {
-            return;
+async processParticipantQueue() {
+    if (this.isLoadingParticipants || this.participantQueue.length === 0) {
+        return;
+    }
+    
+    this.isLoadingParticipants = true;
+    
+    while (this.participantQueue.length > 0) {
+        // Check if loading was cancelled
+        if (this.participantLoadingAbortController?.signal.aborted) {
+            console.log('🛑 Participant loading was cancelled');
+            break;
         }
         
-        this.isLoadingParticipants = true;
+        // Get next batch of 5 items
+        const batch = this.participantQueue.splice(0, 5);
+        console.log(`🔄 Processing batch of ${batch.length} participants`);
         
-        while (this.participantQueue.length > 0) {
-            // Check if loading was cancelled
-            if (this.participantLoadingAbortController?.signal.aborted) {
-                console.log('🛑 Participant loading was cancelled');
-                break;
-            }
-            
-            const item = this.participantQueue.shift();
-            
+        // Process all 5 simultaneously
+        const batchPromises = batch.map(async (item) => {
             try {
                 console.log(`🔄 Loading participants for space: ${item.spaceId}`);
                 
@@ -188,26 +192,27 @@ class ApiService {
                     item.onLoaded(item.spaceId, participantsData);
                 }
                 
-                // Small delay between requests to be nice to the server
-                await new Promise(resolve => setTimeout(resolve, 100));
-                
             } catch (error) {
                 if (error.message === 'Request cancelled') {
                     console.log('🛑 Participant loading cancelled');
-                    break;
                 } else {
                     console.warn(`⚠️ Failed to load participants for space ${item.spaceId}:`, error.message);
-                    // Continue with next item on error
                 }
             }
-        }
+        });
         
-        this.isLoadingParticipants = false;
+        // Wait for all 5 to complete
+        await Promise.allSettled(batchPromises);
         
-        if (this.participantQueue.length === 0) {
-            console.log('✅ Finished loading participants for all spaces');
+        // Small delay between batches
+        if (this.participantQueue.length > 0) {
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
     }
+    
+    this.isLoadingParticipants = false;
+    console.log('✅ Finished loading participants for all spaces');
+}
 
     /**
      * Cancel any ongoing participant loading
