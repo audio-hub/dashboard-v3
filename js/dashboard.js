@@ -1,8 +1,9 @@
 /**
- * Decoupled Dashboard with Background Participant Loading
- * - Spaces load immediately without waiting for participants
- * - Participants load in background serially and update UI as they arrive
- * - Scrolling and new space requests are never blocked by participant loading
+ * Enhanced Dashboard with Robust Participant Loading During Scroll
+ * - Tracks all spaces that need participant data
+ * - Ensures no spaces are missed during rapid scrolling
+ * - Implements retry logic for failed participant loads
+ * - Provides better visual feedback for loading state
  */
 
 class Dashboard {
@@ -18,8 +19,12 @@ class Dashboard {
         this.hasMore = true;
         this.pageSize = 20;
 
-        // Participant loading state
+        // Enhanced participant loading tracking
         this.participantLoadingIndicator = null;
+        this.spacesNeedingParticipants = new Set(); // Track all spaces that need participants
+        this.participantsLoadingQueue = new Map(); // Track loading status per space
+        this.participantRetryAttempts = new Map(); // Track retry attempts
+        this.maxRetryAttempts = 3;
 
         this.init();
     }
@@ -37,10 +42,13 @@ class Dashboard {
         
         // Create participant loading indicator
         this.createParticipantLoadingIndicator();
+        
+        // Set up periodic participant queue check
+        this.setupParticipantQueueMonitor();
     }
 
     /**
-     * Create a subtle loading indicator for background participant loading
+     * Create a comprehensive loading indicator for background participant loading
      */
     createParticipantLoadingIndicator() {
         const indicator = document.createElement('div');
@@ -49,16 +57,20 @@ class Dashboard {
             position: fixed;
             top: 20px;
             right: 20px;
-            background: rgba(52, 152, 219, 0.9);
+            background: rgba(52, 152, 219, 0.95);
             color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
+            padding: 12px 20px;
+            border-radius: 25px;
             font-size: 0.85rem;
             font-weight: 500;
             z-index: 1000;
             display: none;
             transition: all 0.3s ease;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            min-width: 200px;
+            text-align: center;
         `;
         indicator.innerHTML = '🔄 Loading participants...';
         document.body.appendChild(indicator);
@@ -67,15 +79,21 @@ class Dashboard {
     }
 
     /**
-     * Update participant loading indicator
+     * Enhanced participant loading indicator with detailed progress
      */
     updateParticipantLoadingIndicator() {
         if (!this.participantLoadingIndicator) return;
         
         const progress = api.getParticipantLoadingProgress();
+        const needingCount = this.spacesNeedingParticipants.size;
+        const loadingCount = this.participantsLoadingQueue.size;
         
-        if (progress.isLoading) {
-            this.participantLoadingIndicator.innerHTML = `🔄 Loading participants... (${progress.progress})`;
+        if (progress.isLoading || needingCount > 0 || loadingCount > 0) {
+            const pendingText = needingCount > 0 ? ` (${needingCount} pending)` : '';
+            const retryText = this.getRetryStatusText();
+            
+            this.participantLoadingIndicator.innerHTML = 
+                `🔄 Loading participants... ${progress.progress}${pendingText}${retryText}`;
             this.participantLoadingIndicator.style.display = 'block';
         } else {
             this.participantLoadingIndicator.style.display = 'none';
@@ -83,7 +101,27 @@ class Dashboard {
     }
 
     /**
-     * Sets up infinite scroll functionality
+     * Get retry status text for display
+     */
+    getRetryStatusText() {
+        const retryCount = Array.from(this.participantRetryAttempts.values())
+            .filter(attempts => attempts > 0).length;
+        
+        return retryCount > 0 ? ` (${retryCount} retrying)` : '';
+    }
+
+    /**
+     * Set up periodic monitoring to ensure no spaces are left without participants
+     */
+    setupParticipantQueueMonitor() {
+        setInterval(() => {
+            this.processParticipantQueue();
+            this.updateParticipantLoadingIndicator();
+        }, 2000); // Check every 2 seconds
+    }
+
+    /**
+     * Enhanced infinite scroll with participant loading coordination
      */
     setupInfiniteScroll() {
         window.addEventListener('scroll', Utils.debounce(() => {
@@ -98,6 +136,74 @@ class Dashboard {
                 this.loadMoreSpaces();
             }
         }, 100));
+    }
+
+    /**
+     * Process any spaces that still need participant data
+     */
+    async processParticipantQueue() {
+        if (this.spacesNeedingParticipants.size === 0) return;
+
+        // Convert set to array and take first few items
+        const spacesToProcess = Array.from(this.spacesNeedingParticipants).slice(0, 3);
+        
+        for (const spaceId of spacesToProcess) {
+            // Skip if already being processed
+            if (this.participantsLoadingQueue.has(spaceId)) continue;
+            
+            // Skip if we've exceeded retry attempts
+            const retryCount = this.participantRetryAttempts.get(spaceId) || 0;
+            if (retryCount >= this.maxRetryAttempts) {
+                console.warn(`Max retry attempts reached for space ${spaceId}`);
+                this.spacesNeedingParticipants.delete(spaceId);
+                this.participantRetryAttempts.delete(spaceId);
+                continue;
+            }
+
+            // Start loading this space's participants
+            this.loadParticipantsForSpace(spaceId);
+        }
+    }
+
+    /**
+     * Load participants for a specific space with retry logic
+     */
+    async loadParticipantsForSpace(spaceId) {
+        if (this.participantsLoadingQueue.has(spaceId)) return;
+        
+        this.participantsLoadingQueue.set(spaceId, true);
+        
+        try {
+            console.log(`🔄 Loading participants for space: ${spaceId}`);
+            
+            const participantsData = await api.getSpaceParticipants(spaceId);
+            
+            console.log(`✅ Loaded participants for space: ${spaceId} (${participantsData?.totalParticipants || 0} participants)`);
+            
+            // Update UI for this space
+            this.onParticipantDataLoaded(spaceId, participantsData);
+            
+            // Remove from tracking sets
+            this.spacesNeedingParticipants.delete(spaceId);
+            this.participantsLoadingQueue.delete(spaceId);
+            this.participantRetryAttempts.delete(spaceId);
+            
+        } catch (error) {
+            console.warn(`⚠️ Failed to load participants for space ${spaceId}:`, error.message);
+            
+            // Track retry attempt
+            const currentRetries = this.participantRetryAttempts.get(spaceId) || 0;
+            this.participantRetryAttempts.set(spaceId, currentRetries + 1);
+            
+            // Remove from loading queue so it can be retried
+            this.participantsLoadingQueue.delete(spaceId);
+            
+            // If we haven't exceeded max retries, keep it in the needs set
+            if (currentRetries + 1 >= this.maxRetryAttempts) {
+                this.spacesNeedingParticipants.delete(spaceId);
+                console.error(`Max retries exceeded for space ${spaceId}`);
+            }
+        }
     }
 
     /**
@@ -230,15 +336,18 @@ class Dashboard {
     }
 
     /**
-     * DECOUPLED: Load spaces immediately without participants
+     * Enhanced load spaces with comprehensive participant tracking
      */
     async loadSpaces() {
         if (!this.spacesContent) return;
 
-        // Reset pagination state
+        // Reset all tracking state
         this.currentOffset = 0;
         this.hasMore = true;
         this.allSpaces = [];
+        this.spacesNeedingParticipants.clear();
+        this.participantsLoadingQueue.clear();
+        this.participantRetryAttempts.clear();
 
         // Cancel any ongoing participant loading
         api.cancelParticipantLoading();
@@ -261,8 +370,11 @@ class Dashboard {
             const sortedSpaces = this.sortSpaces(data.data);
             this.displaySpaces(sortedSpaces, false);
 
-            // Start background participant loading
-            this.startBackgroundParticipantLoading(sortedSpaces);
+            // Track spaces that need participant data
+            this.trackSpacesNeedingParticipants(sortedSpaces);
+
+            // Start enhanced background participant loading
+            this.startEnhancedParticipantLoading(sortedSpaces);
 
         } catch (error) {
             this.spacesContent.innerHTML = `<div class="error">Failed to load spaces: ${error.message}</div>`;
@@ -271,7 +383,7 @@ class Dashboard {
     }
 
     /**
-     * DECOUPLED: Load more spaces without waiting for participants
+     * Enhanced load more spaces with proper participant tracking
      */
     async loadMoreSpaces() {
         if (this.isLoading || !this.hasMore) return;
@@ -295,8 +407,11 @@ class Dashboard {
                 const sortedSpaces = this.sortSpaces(data.data);
                 this.displaySpaces(sortedSpaces, true);
 
-                // Add new spaces to background participant loading
-                this.addSpacesToParticipantQueue(sortedSpaces);
+                // Track new spaces that need participant data
+                this.trackSpacesNeedingParticipants(sortedSpaces);
+
+                // Add new spaces to enhanced participant loading
+                this.addSpacesToEnhancedParticipantLoading(sortedSpaces);
             } else {
                 this.hasMore = false;
             }
@@ -309,39 +424,54 @@ class Dashboard {
     }
 
     /**
-     * Start background participant loading for spaces
+     * Track spaces that need participant data
      */
-    startBackgroundParticipantLoading(spaces) {
-        console.log(`🔄 Starting background participant loading for ${spaces.length} spaces`);
+    trackSpacesNeedingParticipants(spaces) {
+        spaces.forEach(space => {
+            if (space._id && !api.getCachedParticipants(space._id)) {
+                this.spacesNeedingParticipants.add(space._id);
+                console.log(`📝 Tracking space ${space._id} for participant loading`);
+            }
+        });
         
+        console.log(`📊 Total spaces needing participants: ${this.spacesNeedingParticipants.size}`);
+    }
+
+    /**
+     * Enhanced participant loading with better coordination
+     */
+    startEnhancedParticipantLoading(spaces) {
+        console.log(`🚀 Starting enhanced participant loading for ${spaces.length} spaces`);
+        
+        // Use the existing API method but with enhanced tracking
         api.startBackgroundParticipantLoading(spaces, (spaceId, participantsData) => {
             // Callback when each participant set is loaded
             this.onParticipantDataLoaded(spaceId, participantsData);
+            
+            // Remove from our tracking
+            this.spacesNeedingParticipants.delete(spaceId);
+            this.participantsLoadingQueue.delete(spaceId);
+            this.participantRetryAttempts.delete(spaceId);
         });
         
         // Update loading indicator
         this.updateParticipantLoadingIndicator();
-        
-        // Check progress periodically
-        const progressInterval = setInterval(() => {
-            this.updateParticipantLoadingIndicator();
-            
-            if (!api.isLoadingParticipantsInBackground()) {
-                clearInterval(progressInterval);
-                setTimeout(() => {
-                    this.updateParticipantLoadingIndicator();
-                }, 1000); // Hide indicator after 1 second
-            }
-        }, 500);
     }
 
     /**
-     * Add more spaces to the participant loading queue
+     * Add more spaces to enhanced participant loading
      */
-    addSpacesToParticipantQueue(spaces) {
+    addSpacesToEnhancedParticipantLoading(spaces) {
+        console.log(`➕ Adding ${spaces.length} more spaces to participant loading`);
+        
         // This will add to the existing queue and continue serial processing
         api.startBackgroundParticipantLoading(spaces, (spaceId, participantsData) => {
             this.onParticipantDataLoaded(spaceId, participantsData);
+            
+            // Remove from our tracking
+            this.spacesNeedingParticipants.delete(spaceId);
+            this.participantsLoadingQueue.delete(spaceId);
+            this.participantRetryAttempts.delete(spaceId);
         });
         
         this.updateParticipantLoadingIndicator();
@@ -514,7 +644,7 @@ class Dashboard {
 
     /**
      * Creates HTML for participant avatars with overlapping display
-     * Updated to handle missing participant data gracefully
+     * Enhanced with better loading state handling
      */
     createParticipantAvatarsHTML(participantsData, maxShow = 5) {
         if (!participantsData || !participantsData.participants || participantsData.participants.length === 0) {
@@ -573,7 +703,7 @@ class Dashboard {
     }
 
     /**
-     * Enhanced space display with participant avatars (initially showing "Loading...")
+     * Enhanced space display with participant avatars and better tracking
      */
     displaySpaces(spaces, append = false) {
         if (!this.spacesContent) return;
@@ -715,7 +845,7 @@ class Dashboard {
 
     /**
      * Creates HTML for a single space item with participant avatars
-     * Initially shows "Loading participants..." until data arrives
+     * Enhanced with better loading state and tracking
      */
     createSpaceItemHTML(space, audioFiles, transcription, spaceUrl, privacyInfo, anchorInfo) {
         const isLive = space.isLive;
@@ -781,8 +911,21 @@ class Dashboard {
             actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`;
         }
 
-        // Initially show "Loading participants..." - will be updated when data arrives
-        const participantAvatarsHTML = '<div class="participant-avatars-empty">Loading participants...</div>';
+        // Enhanced participant loading state
+        const hasParticipantData = api.getCachedParticipants(space._id);
+        const isInLoadingQueue = this.participantsLoadingQueue.has(space._id);
+        const needsParticipants = this.spacesNeedingParticipants.has(space._id);
+        
+        let participantAvatarsHTML;
+        if (hasParticipantData) {
+            participantAvatarsHTML = this.createParticipantAvatarsHTML(hasParticipantData);
+        } else if (isInLoadingQueue) {
+            participantAvatarsHTML = '<div class="participant-avatars-empty">🔄 Loading participants...</div>';
+        } else if (needsParticipants) {
+            participantAvatarsHTML = '<div class="participant-avatars-empty">⏳ Queued for loading...</div>';
+        } else {
+            participantAvatarsHTML = '<div class="participant-avatars-empty">Loading participants...</div>';
+        }
 
         return `
         <div class="space-item" data-space-id="${space._id}">
@@ -860,6 +1003,126 @@ class Dashboard {
             Utils.showMessage(`Failed to load space details: ${error.message}`);
         }
     }
+
+    /**
+     * Debug method to show comprehensive participant loading status
+     */
+    debugParticipantLoadingStatus() {
+        const progress = api.getParticipantLoadingProgress();
+        const cache = api.getParticipantsCache();
+        
+        const debugInfo = {
+            loadingProgress: progress,
+            spacesNeedingParticipants: Array.from(this.spacesNeedingParticipants),
+            loadingQueue: Array.from(this.participantsLoadingQueue.entries()),
+            retryAttempts: Array.from(this.participantRetryAttempts.entries()),
+            cacheStats: {
+                totalEntries: Object.keys(cache).length,
+                successfulEntries: Object.values(cache).filter(p => p !== null).length,
+                failedEntries: Object.values(cache).filter(p => p === null).length
+            },
+            totalSpacesDisplayed: this.allSpaces.length,
+            coverage: {
+                percentage: this.allSpaces.length > 0 ? 
+                    Math.round((Object.keys(cache).length / this.allSpaces.length) * 100) : 0,
+                missing: this.spacesNeedingParticipants.size,
+                loading: this.participantsLoadingQueue.size
+            }
+        };
+        
+        console.log('🔍 Enhanced Participant Loading Debug:', debugInfo);
+        
+        const debugText = `
+Enhanced Participant Loading Status:
+
+📊 OVERVIEW:
+- Total Spaces Displayed: ${debugInfo.totalSpacesDisplayed}
+- Participant Coverage: ${debugInfo.coverage.percentage}%
+- Still Missing: ${debugInfo.coverage.missing} spaces
+- Currently Loading: ${debugInfo.coverage.loading} spaces
+
+🔄 LOADING STATE:
+- API Loading: ${progress.isLoading ? 'YES' : 'NO'}
+- Queue Length: ${progress.queueLength}
+- Progress: ${progress.progress}
+
+📝 TRACKING QUEUES:
+- Spaces Needing Participants: ${debugInfo.spacesNeedingParticipants.length}
+- Active Loading Queue: ${debugInfo.loadingQueue.length}
+- Retry Attempts: ${debugInfo.retryAttempts.length}
+
+💾 CACHE STATISTICS:
+- Total Cache Entries: ${debugInfo.cacheStats.totalEntries}
+- Successful API Calls: ${debugInfo.cacheStats.successfulEntries}
+- Failed API Calls: ${debugInfo.cacheStats.failedEntries}
+
+🔧 DEBUGGING COMMANDS:
+- dashboard.forceParticipantSync() - Force sync all missing
+- dashboard.clearParticipantTracking() - Reset tracking
+- dashboard.debugParticipantLoadingStatus() - Show this info
+        `;
+        
+        if (window.modal) {
+            modal.showDebugInfo(debugText);
+        } else {
+            console.log(debugText);
+        }
+        
+        return debugInfo;
+    }
+
+    /**
+     * Force synchronization of all missing participant data
+     */
+    async forceParticipantSync() {
+        console.log('🔄 Force synchronizing participant data for all spaces...');
+        
+        // Cancel any ongoing loading
+        api.cancelParticipantLoading();
+        
+        // Clear tracking state
+        this.participantsLoadingQueue.clear();
+        this.participantRetryAttempts.clear();
+        
+        // Find all spaces without participant data
+        this.spacesNeedingParticipants.clear();
+        this.allSpaces.forEach(space => {
+            if (space._id && !api.getCachedParticipants(space._id)) {
+                this.spacesNeedingParticipants.add(space._id);
+            }
+        });
+        
+        console.log(`📋 Found ${this.spacesNeedingParticipants.size} spaces needing participant data`);
+        
+        // Start enhanced loading
+        this.startEnhancedParticipantLoading(this.allSpaces);
+        
+        Utils.showMessage(`Force sync started for ${this.spacesNeedingParticipants.size} spaces`, CONFIG.MESSAGE_TYPES.SUCCESS);
+    }
+
+    /**
+     * Clear all participant tracking state
+     */
+    clearParticipantTracking() {
+        console.log('🧹 Clearing all participant tracking state...');
+        
+        api.cancelParticipantLoading();
+        this.spacesNeedingParticipants.clear();
+        this.participantsLoadingQueue.clear();
+        this.participantRetryAttempts.clear();
+        
+        // Clear API cache
+        api.participantsCache = {};
+        
+        // Re-display all spaces to reset loading states
+        if (this.allSpaces.length > 0) {
+            const sortedSpaces = this.sortSpaces(this.allSpaces);
+            this.displaySpaces(sortedSpaces, false);
+            this.trackSpacesNeedingParticipants(sortedSpaces);
+        }
+        
+        Utils.showMessage('Participant tracking cleared and reset', CONFIG.MESSAGE_TYPES.SUCCESS);
+    }
 }
 
 // Create global instance
@@ -867,3 +1130,8 @@ const dashboard = new Dashboard();
 
 // Make dashboard globally available for debugging and access from other scripts
 window.dashboard = dashboard;
+
+// Enhanced debugging methods
+window.debugParticipants = () => dashboard.debugParticipantLoadingStatus();
+window.forceParticipantSync = () => dashboard.forceParticipantSync();
+window.clearParticipantTracking = () => dashboard.clearParticipantTracking();
