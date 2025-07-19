@@ -1,6 +1,8 @@
 /**
- * Enhanced Dashboard management with participant avatars and parallel API loading
- * Updated to display overlapping participant profile images
+ * Decoupled Dashboard with Background Participant Loading
+ * - Spaces load immediately without waiting for participants
+ * - Participants load in background serially and update UI as they arrive
+ * - Scrolling and new space requests are never blocked by participant loading
  */
 
 class Dashboard {
@@ -16,6 +18,9 @@ class Dashboard {
         this.hasMore = true;
         this.pageSize = 20;
 
+        // Participant loading state
+        this.participantLoadingIndicator = null;
+
         this.init();
     }
 
@@ -29,6 +34,52 @@ class Dashboard {
 
         // Set up infinite scroll
         this.setupInfiniteScroll();
+        
+        // Create participant loading indicator
+        this.createParticipantLoadingIndicator();
+    }
+
+    /**
+     * Create a subtle loading indicator for background participant loading
+     */
+    createParticipantLoadingIndicator() {
+        const indicator = document.createElement('div');
+        indicator.id = 'participant-loading-indicator';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(52, 152, 219, 0.9);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            z-index: 1000;
+            display: none;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        `;
+        indicator.innerHTML = '🔄 Loading participants...';
+        document.body.appendChild(indicator);
+        
+        this.participantLoadingIndicator = indicator;
+    }
+
+    /**
+     * Update participant loading indicator
+     */
+    updateParticipantLoadingIndicator() {
+        if (!this.participantLoadingIndicator) return;
+        
+        const progress = api.getParticipantLoadingProgress();
+        
+        if (progress.isLoading) {
+            this.participantLoadingIndicator.innerHTML = `🔄 Loading participants... (${progress.progress})`;
+            this.participantLoadingIndicator.style.display = 'block';
+        } else {
+            this.participantLoadingIndicator.style.display = 'none';
+        }
     }
 
     /**
@@ -54,65 +105,38 @@ class Dashboard {
      */
     async downloadAudioFile(url, filename, space) {
         try {
-            // Create a more descriptive filename
             const hostSlug = Utils.slugify(space.host || 'unknown');
             const titleSlug = Utils.slugify(space.title || 'untitled');
             const dateStr = space.createdAt ?
                 new Date(space.createdAt).toISOString().split('T')[0] :
                 'unknown-date';
 
-            // Extract file extension from original filename or URL
             const extension = filename.match(/\.(mp3|aac|m4a|mp4)$/i)?.[1] || 'mp3';
-
-            // Create descriptive filename: host_title_date_spaceId.extension
             const downloadFilename = `${hostSlug}_${titleSlug}_${dateStr}_${space._id}.${extension}`;
 
             Utils.showMessage(`Starting download: ${downloadFilename}`, CONFIG.MESSAGE_TYPES.SUCCESS);
 
-            // Fetch the file
             const response = await fetch(url);
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            // Get the blob
             const blob = await response.blob();
-
-            // Create download link with blob URL
             const blobUrl = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = blobUrl;
             link.download = downloadFilename;
             link.style.display = 'none';
 
-            // Add to DOM, click, and remove
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
-            // Clean up blob URL
             window.URL.revokeObjectURL(blobUrl);
 
             Utils.showMessage(`Download started: ${downloadFilename}`, CONFIG.MESSAGE_TYPES.SUCCESS);
         } catch (error) {
             console.error('Download failed:', error);
             Utils.showMessage(`Download failed: ${error.message}`);
-
-            // Fallback: try simple download attribute approach
-            try {
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = filename || 'audio_file';
-                link.target = '_blank';
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                Utils.showMessage('Fallback download attempt initiated', CONFIG.MESSAGE_TYPES.SUCCESS);
-            } catch (fallbackError) {
-                console.error('Fallback download also failed:', fallbackError);
-                Utils.showMessage('Download failed. You can right-click the Listen button and "Save link as..."');
-            }
         }
     }
 
@@ -122,9 +146,7 @@ class Dashboard {
     calculateAudioDuration(fileSizeBytes, bitrateKbps = 96) {
         if (!fileSizeBytes || fileSizeBytes <= 0) return null;
         
-        // Formula: Duration (seconds) = (File Size in bytes × 8) / (Bitrate in bits per second)
         const durationSeconds = (fileSizeBytes * 8) / (bitrateKbps * 1000);
-        
         return this.formatDurationFromSeconds(durationSeconds);
     }
 
@@ -162,21 +184,12 @@ class Dashboard {
     displayStats(stats) {
         if (!this.statsGrid) return;
 
-        // Core metrics
         const totalSpaces = stats.overview.totalSpaces || 0;
         const liveSpaces = stats.overview.liveSpaces || 0;
         const recordingSuccessRate = stats.overview.recordingSuccessRate || 0;
         const avgParticipants = stats.overview.avgParticipants || 0;
-
-        // Privacy metrics
         const publicPercentage = stats.privacy.publicPercentage || 0;
-        const privateSpaces = stats.privacy.privateSpaces || 0;
-
-        // Discovery metrics
         const discoverySuccessRate = stats.discovery.discoverySuccessRate || 0;
-        const spacesWithAnchor = stats.discovery.spacesWithAnchor || 0;
-
-        // Activity metrics
         const recentSpaces = stats.activity.recentSpaces || 0;
         const hostDiversity = stats.activity.hostDiversity || 0;
 
@@ -217,7 +230,7 @@ class Dashboard {
     }
 
     /**
-     * Loads Twitter Spaces data with participants using the enhanced API method
+     * DECOUPLED: Load spaces immediately without participants
      */
     async loadSpaces() {
         if (!this.spacesContent) return;
@@ -227,23 +240,30 @@ class Dashboard {
         this.hasMore = true;
         this.allSpaces = [];
 
-        this.spacesContent.innerHTML = '<div class="loading">Loading spaces and participants...</div>';
+        // Cancel any ongoing participant loading
+        api.cancelParticipantLoading();
+
+        this.spacesContent.innerHTML = '<div class="loading">Loading spaces...</div>';
 
         try {
             const filters = this.getFilterValues();
             filters.offset = 0;
             filters.limit = this.pageSize;
 
-            // Use the enhanced method that fetches participants in parallel
-            const data = await api.getSpacesWithParticipants(filters);
+            // Load ONLY spaces (no participants)
+            const data = await api.getSpacesOnly(filters);
 
             this.allSpaces = data.data;
             this.currentOffset = this.pageSize;
             this.hasMore = data.hasMore;
 
-            // Sort spaces before displaying
+            // Display spaces immediately
             const sortedSpaces = this.sortSpaces(data.data);
-            this.displaySpaces(sortedSpaces, false); // false = replace content
+            this.displaySpaces(sortedSpaces, false);
+
+            // Start background participant loading
+            this.startBackgroundParticipantLoading(sortedSpaces);
+
         } catch (error) {
             this.spacesContent.innerHTML = `<div class="error">Failed to load spaces: ${error.message}</div>`;
             console.error('Spaces error:', error);
@@ -251,7 +271,7 @@ class Dashboard {
     }
 
     /**
-     * Loads more spaces for infinite scroll with participants
+     * DECOUPLED: Load more spaces without waiting for participants
      */
     async loadMoreSpaces() {
         if (this.isLoading || !this.hasMore) return;
@@ -263,17 +283,20 @@ class Dashboard {
             filters.offset = this.currentOffset;
             filters.limit = this.pageSize;
 
-            // Use the enhanced method that fetches participants in parallel
-            const data = await api.getSpacesWithParticipants(filters);
+            // Load ONLY spaces (no participants)
+            const data = await api.getSpacesOnly(filters);
 
             if (data.data && data.data.length > 0) {
                 this.allSpaces = [...this.allSpaces, ...data.data];
                 this.currentOffset += data.data.length;
                 this.hasMore = data.hasMore;
 
-                // Sort new spaces and append
+                // Display new spaces immediately
                 const sortedSpaces = this.sortSpaces(data.data);
-                this.displaySpaces(sortedSpaces, true); // true = append content
+                this.displaySpaces(sortedSpaces, true);
+
+                // Add new spaces to background participant loading
+                this.addSpacesToParticipantQueue(sortedSpaces);
             } else {
                 this.hasMore = false;
             }
@@ -282,6 +305,86 @@ class Dashboard {
             Utils.showMessage(`Failed to load more spaces: ${error.message}`);
         } finally {
             this.isLoading = false;
+        }
+    }
+
+    /**
+     * Start background participant loading for spaces
+     */
+    startBackgroundParticipantLoading(spaces) {
+        console.log(`🔄 Starting background participant loading for ${spaces.length} spaces`);
+        
+        api.startBackgroundParticipantLoading(spaces, (spaceId, participantsData) => {
+            // Callback when each participant set is loaded
+            this.onParticipantDataLoaded(spaceId, participantsData);
+        });
+        
+        // Update loading indicator
+        this.updateParticipantLoadingIndicator();
+        
+        // Check progress periodically
+        const progressInterval = setInterval(() => {
+            this.updateParticipantLoadingIndicator();
+            
+            if (!api.isLoadingParticipantsInBackground()) {
+                clearInterval(progressInterval);
+                setTimeout(() => {
+                    this.updateParticipantLoadingIndicator();
+                }, 1000); // Hide indicator after 1 second
+            }
+        }, 500);
+    }
+
+    /**
+     * Add more spaces to the participant loading queue
+     */
+    addSpacesToParticipantQueue(spaces) {
+        // This will add to the existing queue and continue serial processing
+        api.startBackgroundParticipantLoading(spaces, (spaceId, participantsData) => {
+            this.onParticipantDataLoaded(spaceId, participantsData);
+        });
+        
+        this.updateParticipantLoadingIndicator();
+    }
+
+    /**
+     * Called when participant data is loaded for a space
+     * Updates the UI for that specific space
+     */
+    onParticipantDataLoaded(spaceId, participantsData) {
+        console.log(`✅ Updating UI for space ${spaceId} with participant data`);
+        
+        // Find the space element in the DOM
+        const spaceElement = this.spacesContent.querySelector(`[data-space-id="${spaceId}"]`);
+        if (!spaceElement) {
+            console.warn(`Space element not found for ${spaceId}`);
+            return;
+        }
+
+        // Update participant avatars for this space
+        const participantContainer = spaceElement.querySelector('.participant-avatars, .participant-avatars-empty');
+        if (participantContainer) {
+            const newAvatarsHTML = this.createParticipantAvatarsHTML(participantsData);
+            participantContainer.outerHTML = newAvatarsHTML;
+            
+            // Re-setup click handler for this specific space
+            this.setupParticipantClickHandlerForSpace(spaceElement);
+        }
+    }
+
+    /**
+     * Setup click handler for a specific space element
+     */
+    setupParticipantClickHandlerForSpace(spaceElement) {
+        const participantAvatars = spaceElement.querySelector('.participant-avatars');
+        if (participantAvatars) {
+            participantAvatars.addEventListener('click', (e) => {
+                const spaceId = spaceElement.dataset.spaceId;
+                const spaceTitle = spaceElement.querySelector('.space-title').textContent;
+                if (spaceId) {
+                    this.showParticipantsModal(spaceId, spaceTitle);
+                }
+            });
         }
     }
 
@@ -411,13 +514,11 @@ class Dashboard {
 
     /**
      * Creates HTML for participant avatars with overlapping display
-     * @param {Object} participantsData - Participants data from API
-     * @param {number} maxShow - Maximum number of avatars to show (default: 5)
-     * @returns {string} HTML string for participant avatars
+     * Updated to handle missing participant data gracefully
      */
     createParticipantAvatarsHTML(participantsData, maxShow = 5) {
         if (!participantsData || !participantsData.participants || participantsData.participants.length === 0) {
-            return '<div class="participant-avatars-empty">No participants</div>';
+            return '<div class="participant-avatars-empty">Loading participants...</div>';
         }
 
         const participants = participantsData.participants;
@@ -425,7 +526,7 @@ class Dashboard {
         const showCount = Math.min(participants.length, maxShow);
         const remainingCount = Math.max(0, totalCount - maxShow);
 
-        // FIXED: Explicit role-based sorting with debug logging
+        // Role-based sorting
         const roleOrder = { 'host': 0, 'co-host': 1, 'speaker': 2, 'listener': 3 };
         const sortedParticipants = [...participants].sort((a, b) => {
             const roleA = (a.role || '').toLowerCase();
@@ -433,29 +534,17 @@ class Dashboard {
             const priorityA = roleOrder[roleA] !== undefined ? roleOrder[roleA] : 99;
             const priorityB = roleOrder[roleB] !== undefined ? roleOrder[roleB] : 99;
             
-            // Debug: Log the sorting if there are multiple roles
-            if (participants.length > 1) {
-                console.log(`Sorting: ${a.name} (${roleA}, priority ${priorityA}) vs ${b.name} (${roleB}, priority ${priorityB})`);
-            }
-            
             return priorityA - priorityB;
         });
-
-        // Debug: Log final order
-        if (sortedParticipants.length > 1) {
-            console.log('Final participant order:', sortedParticipants.map(p => `${p.name} (${p.role})`).join(' → '));
-        }
 
         const avatarsHTML = sortedParticipants.slice(0, showCount).map((participant, index) => {
             const profileImage = api.enhanceImageQuality(participant.profileImage) || participant.profileImage;
             
-            // FIXED: Normalize role for CSS class and ensure proper mapping
             const normalizedRole = (participant.role || '').toLowerCase().replace('-', '').replace('co-host', 'cohost');
-            const roleClass = normalizedRole || 'listener'; // Default to listener if no role
+            const roleClass = normalizedRole || 'listener';
             
             const title = `${participant.name} (@${participant.username.replace('@', '')}) - ${participant.role}`;
             
-            // FIXED: Higher z-index for more important roles (host gets highest z-index)
             const baseZIndex = 100;
             const roleZIndex = baseZIndex + (showCount - index) + (roleOrder[participant.role?.toLowerCase()] !== undefined ? (3 - roleOrder[participant.role.toLowerCase()]) * 10 : 0);
             
@@ -484,7 +573,7 @@ class Dashboard {
     }
 
     /**
-     * Enhanced space display with participant avatars
+     * Enhanced space display with participant avatars (initially showing "Loading...")
      */
     displaySpaces(spaces, append = false) {
         if (!this.spacesContent) return;
@@ -554,11 +643,20 @@ class Dashboard {
 
     /**
      * Shows participants modal for a space
-     * @param {string} spaceId - Space ID
-     * @param {string} spaceTitle - Space title
      */
     async showParticipantsModal(spaceId, spaceTitle) {
-        const participantsData = api.getCachedParticipants(spaceId);
+        let participantsData = api.getCachedParticipants(spaceId);
+        
+        if (!participantsData) {
+            // If not loaded yet, try to load it now
+            Utils.showMessage('Loading participants...', CONFIG.MESSAGE_TYPES.SUCCESS);
+            try {
+                participantsData = await api.getSpaceParticipants(spaceId);
+            } catch (error) {
+                Utils.showMessage('Failed to load participants for this space');
+                return;
+            }
+        }
         
         if (!participantsData || !participantsData.participants) {
             Utils.showMessage('No participant data available for this space');
@@ -617,6 +715,7 @@ class Dashboard {
 
     /**
      * Creates HTML for a single space item with participant avatars
+     * Initially shows "Loading participants..." until data arrives
      */
     createSpaceItemHTML(space, audioFiles, transcription, spaceUrl, privacyInfo, anchorInfo) {
         const isLive = space.isLive;
@@ -627,7 +726,7 @@ class Dashboard {
         const rawTitle = space.title || 'Untitled Space';
         const displayTitle = rawTitle.length > 64 ? rawTitle.substring(0, 60) + '...' : rawTitle;
 
-        // Create a compact metadata string with audio duration, privacy, and anchor info
+        // Create a compact metadata string
         const metaParts = [];
 
         // Add host with a hyperlink to their X.com profile
@@ -646,7 +745,7 @@ class Dashboard {
         // Add Privacy Info
         metaParts.push(`${privacyInfo.icon} ${privacyInfo.status}`);
 
-        // Add Anchor Info if it exists, including the anchor's role
+        // Add Anchor Info if it exists
         if (anchorInfo.hasAnchor) {
             metaParts.push(`${anchorInfo.icon} via ${anchorInfo.roleIcon} ${anchorInfo.displayText} (${anchorInfo.roleText})`);
         }
@@ -682,8 +781,8 @@ class Dashboard {
             actionsHTML += `<a href="${spaceUrl}" target="_blank" class="btn btn-primary">Open on X</a>`;
         }
 
-        // Create participant avatars HTML
-        const participantAvatarsHTML = this.createParticipantAvatarsHTML(space.participantsData);
+        // Initially show "Loading participants..." - will be updated when data arrives
+        const participantAvatarsHTML = '<div class="participant-avatars-empty">Loading participants...</div>';
 
         return `
         <div class="space-item" data-space-id="${space._id}">
@@ -710,13 +809,10 @@ class Dashboard {
             new Date(space.createdAt).toISOString().split('T')[0] :
             'unknown-date';
 
-        // Extract file extension from original filename or default to mp3
         const extension = originalFilename?.match(/\.(mp3|aac|m4a|mp4)$/i)?.[1] || 'mp3';
 
-        // Create descriptive filename
         let filename = `${hostSlug}_${titleSlug}_${dateStr}_${space._id}`;
 
-        // Add index for multiple files
         if (index !== null && index > 0) {
             filename += `_part${index + 1}`;
         }
@@ -766,7 +862,7 @@ class Dashboard {
     }
 }
 
-// Create global instance - This is CRITICAL for app.js to work
+// Create global instance
 const dashboard = new Dashboard();
 
 // Make dashboard globally available for debugging and access from other scripts

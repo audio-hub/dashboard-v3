@@ -1,6 +1,5 @@
 /**
- * Enhanced application initialization with participants support
- * Updated to use the new parallel API loading for spaces and participants
+ * Updated application initialization with decoupled participant loading
  */
 
 class App {
@@ -27,7 +26,7 @@ class App {
     }
 
     /**
-     * Start the application
+     * Start the application with decoupled loading
      */
     async start() {
         if (this.isInitialized) return;
@@ -40,21 +39,20 @@ class App {
                 return;
             }
 
-            Utils.showMessage('Loading data and participants...', CONFIG.MESSAGE_TYPES.SUCCESS);
+            Utils.showMessage('Loading dashboard...', CONFIG.MESSAGE_TYPES.SUCCESS);
             
-            // Load audio files mapping first (now supports all formats)
+            // Load audio files mapping first
             await api.loadAudioFiles();
             
-            // Load initial data with participants using the enhanced method
-            await Promise.all([
-                dashboard.loadSpaces() // This now uses getSpacesWithParticipants internally
-            ]);
+            // Load spaces immediately (without participants)
+            // Participants will load in background automatically
+            await dashboard.loadSpaces();
 
             this.setupEventListeners();
             this.isInitialized = true;
             
-            console.log('✅ Application initialized successfully with participants support');
-            Utils.showMessage('Dashboard loaded with participant data!', CONFIG.MESSAGE_TYPES.SUCCESS);
+            console.log('✅ Application initialized successfully with decoupled participant loading');
+            Utils.showMessage('Dashboard loaded! Participants loading in background...', CONFIG.MESSAGE_TYPES.SUCCESS);
             
         } catch (error) {
             console.error('Failed to start application:', error);
@@ -66,7 +64,7 @@ class App {
      * Set up event listeners for the application
      */
     setupEventListeners() {
-        // Basic connectivity handling only
+        // Basic connectivity handling
         window.addEventListener('online', () => {
             Utils.showMessage('Connection restored', CONFIG.MESSAGE_TYPES.SUCCESS);
         });
@@ -75,28 +73,37 @@ class App {
             Utils.showMessage('Connection lost - some features may not work');
         });
 
+        // Handle page visibility changes
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                // Page is hidden, cancel participant loading to save resources
+                api.cancelParticipantLoading();
+                console.log('🛑 Page hidden, cancelled participant loading');
+            } else {
+                // Page is visible again, resume participant loading if needed
+                console.log('👁️ Page visible again');
+                // Optionally restart participant loading for visible spaces
+            }
+        });
+
         console.log('Event listeners set up successfully');
     }
 
     /**
      * Handle application errors
-     * @param {Error} error - The error to handle
-     * @param {string} context - Context where the error occurred
      */
     handleError(error, context = 'Unknown') {
         console.error(`Error in ${context}:`, error);
         Utils.showMessage(`Error in ${context}: ${error.message}`);
-        
-        // Could add error reporting here
-        // this.reportError(error, context);
     }
 
     /**
-     * Get application status - enhanced with participant cache info
+     * Get application status with participant loading info
      */
     getStatus() {
         const audioMap = window.api ? api.getAudioFilesMap() : {};
         const participantsCache = window.api ? api.getParticipantsCache() : {};
+        const participantProgress = window.api ? api.getParticipantLoadingProgress() : {};
         const formatCounts = {};
         
         // Count files by format
@@ -118,27 +125,33 @@ class App {
             spacesCount: window.dashboard ? dashboard.allSpaces.length : 0,
             audioFilesCount: Object.keys(audioMap).length,
             formatBreakdown: formatCounts,
-            participantsCacheSize: participantsCacheSize,
-            spacesWithParticipants: spacesWithParticipants,
+            participantLoading: {
+                isLoading: participantProgress.isLoading || false,
+                queueLength: participantProgress.queueLength || 0,
+                cachedCount: participantsCacheSize,
+                spacesWithParticipants: spacesWithParticipants,
+                progress: participantProgress.progress || 'Not started'
+            },
             timestamp: new Date().toISOString()
         };
     }
 
     /**
-     * Refresh data manually - useful for debugging or manual updates
+     * Refresh data manually
      */
     async refreshData() {
         try {
             Utils.showMessage('Refreshing data...', CONFIG.MESSAGE_TYPES.SUCCESS);
             
-            // Clear caches
+            // Cancel any ongoing participant loading
             if (window.api) {
+                api.cancelParticipantLoading();
                 api.participantsCache = {};
             }
             
             // Reload data
             await api.loadAudioFiles();
-            await dashboard.loadSpaces();
+            await dashboard.loadSpaces(); // This will restart participant loading automatically
             
             Utils.showMessage('Data refreshed successfully!', CONFIG.MESSAGE_TYPES.SUCCESS);
         } catch (error) {
@@ -148,36 +161,76 @@ class App {
     }
 
     /**
-     * Debug method to show participants cache status
+     * Force load participants for all visible spaces
      */
-    debugParticipantsCache() {
+    async forceLoadParticipants() {
+        if (!window.dashboard || !dashboard.allSpaces) {
+            Utils.showMessage('No spaces loaded yet');
+            return;
+        }
+
+        Utils.showMessage('Force loading participants...', CONFIG.MESSAGE_TYPES.SUCCESS);
+        
+        // Cancel existing loading
+        api.cancelParticipantLoading();
+        
+        // Start fresh participant loading
+        dashboard.startBackgroundParticipantLoading(dashboard.allSpaces);
+        
+        Utils.showMessage('Participant loading restarted', CONFIG.MESSAGE_TYPES.SUCCESS);
+    }
+
+    /**
+     * Debug method to show participants loading status
+     */
+    debugParticipantsLoading() {
+        const progress = api.getParticipantLoadingProgress();
         const cache = api.getParticipantsCache();
+        
         const stats = {
-            totalEntries: Object.keys(cache).length,
-            successfulEntries: Object.values(cache).filter(p => p !== null).length,
-            failedEntries: Object.values(cache).filter(p => p === null).length,
-            sampleEntry: Object.keys(cache)[0] ? {
+            loadingStatus: progress,
+            cacheStats: {
+                totalEntries: Object.keys(cache).length,
+                successfulEntries: Object.values(cache).filter(p => p !== null).length,
+                failedEntries: Object.values(cache).filter(p => p === null).length
+            },
+            sampleCacheEntry: Object.keys(cache)[0] ? {
                 spaceId: Object.keys(cache)[0],
                 hasData: cache[Object.keys(cache)[0]] !== null,
                 participantCount: cache[Object.keys(cache)[0]]?.totalParticipants || 0
             } : null
         };
         
-        console.log('Participants Cache Debug:', stats);
-        modal.showDebugInfo(`
-Participants Cache Status:
+        console.log('Participant Loading Debug:', stats);
+        
+        const debugInfo = `
+Participant Loading Status:
 
-Total Cache Entries: ${stats.totalEntries}
-Successful API Calls: ${stats.successfulEntries}
-Failed API Calls: ${stats.failedEntries}
+Current Status: ${progress.isLoading ? 'LOADING' : 'IDLE'}
+Queue Length: ${progress.queueLength}
+Progress: ${progress.progress}
 
-${stats.sampleEntry ? `Sample Entry:
-Space ID: ${stats.sampleEntry.spaceId}
-Has Data: ${stats.sampleEntry.hasData}
-Participant Count: ${stats.sampleEntry.participantCount}` : 'No cache entries found'}
+Cache Statistics:
+Total Cache Entries: ${stats.cacheStats.totalEntries}
+Successful API Calls: ${stats.cacheStats.successfulEntries}
+Failed API Calls: ${stats.cacheStats.failedEntries}
 
-Cache Keys: ${Object.keys(cache).slice(0, 5).join(', ')}${Object.keys(cache).length > 5 ? '...' : ''}
-        `);
+${stats.sampleCacheEntry ? `Sample Cache Entry:
+Space ID: ${stats.sampleCacheEntry.spaceId}
+Has Data: ${stats.sampleCacheEntry.hasData}
+Participant Count: ${stats.sampleCacheEntry.participantCount}` : 'No cache entries found'}
+
+Commands:
+- app.forceLoadParticipants() - Restart participant loading
+- api.cancelParticipantLoading() - Cancel current loading
+- api.getParticipantLoadingProgress() - Get detailed progress
+        `;
+        
+        if (window.modal) {
+            modal.showDebugInfo(debugInfo);
+        } else {
+            console.log(debugInfo);
+        }
     }
 }
 
@@ -200,6 +253,8 @@ const app = new App();
 window.app = app;
 
 // Expose debug methods for console usage
-window.debugParticipants = () => app.debugParticipantsCache();
+window.debugParticipants = () => app.debugParticipantsLoading();
 window.refreshData = () => app.refreshData();
+window.forceLoadParticipants = () => app.forceLoadParticipants();
+window.cancelParticipants = () => api.cancelParticipantLoading();
 window.appStatus = () => console.log(app.getStatus());

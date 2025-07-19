@@ -1,20 +1,39 @@
 /**
- * Enhanced API Service with participants support and parallel loading
- * Updated to fetch participants data alongside spaces
+ * Enhanced API Service with decoupled participant loading
+ * - Spaces calls are completely independent from participants calls
+ * - Participants are loaded serially (one after another)
+ * - Background participant loading doesn't block UI updates
  */
 
 class ApiService {
     constructor() {
         this.baseUrl = CONFIG.API_BASE_URL;
         this.s3BaseUrl = CONFIG.S3_BASE_URL;
-        this.audioFilesMap = {}; // Stores arrays of audio files per spaceId
-        this.transcriptionMap = {}; // Stores transcription files per spaceId
-        this.participantsCache = {}; // Cache for participants data
+        this.audioFilesMap = {};
+        this.transcriptionMap = {};
+        this.participantsCache = {};
+        
+        // Participant loading state management
+        this.participantQueue = [];
+        this.isLoadingParticipants = false;
+        this.participantLoadingAbortController = null;
     }
 
-    async makeRequest(endpoint) {
+    async makeRequest(endpoint, abortSignal = null) {
         try {
-            const response = await fetch(this.baseUrl + endpoint);
+            const options = {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            };
+            
+            if (abortSignal) {
+                options.signal = abortSignal;
+            }
+            
+            const response = await fetch(this.baseUrl + endpoint, options);
             
             if (!response.ok) {
                 let errorDetails = response.statusText;
@@ -31,6 +50,10 @@ class ApiService {
             
             return await response.json();
         } catch (error) {
+            if (error.name === 'AbortError') {
+                console.log('Request was aborted:', endpoint);
+                throw new Error('Request cancelled');
+            }
             console.error('API Request failed:', error);
             throw error;
         }
@@ -60,14 +83,14 @@ class ApiService {
         return await this.makeRequest(`spaces/${spaceId}`);
     }
 
-    async getSpaceParticipants(spaceId) {
+    async getSpaceParticipants(spaceId, abortSignal = null) {
         // Check cache first
         if (this.participantsCache[spaceId]) {
             return this.participantsCache[spaceId];
         }
 
         try {
-            const data = await this.makeRequest(`spaces/${spaceId}/participants`);
+            const data = await this.makeRequest(`spaces/${spaceId}/participants`, abortSignal);
             // Cache the result
             this.participantsCache[spaceId] = data;
             return data;
@@ -81,59 +104,145 @@ class ApiService {
     }
 
     /**
-     * Enhanced method to get spaces with participants data
-     * Parallelizes participants requests for better performance
+     * COMPLETELY DECOUPLED: Load spaces without any participant data
+     * This is now the main method used by dashboard
      */
-    async getSpacesWithParticipants(filters = {}) {
-        // First get the spaces
+    async getSpacesOnly(filters = {}) {
+        console.log('🔄 Loading spaces only (no participants)');
         const spacesData = await this.getSpaces(filters);
         
-        if (!spacesData.data || spacesData.data.length === 0) {
-            return spacesData;
+        if (spacesData.data && spacesData.data.length > 0) {
+            console.log(`✅ Loaded ${spacesData.data.length} spaces`);
         }
-
-        // Create parallel requests for participants
-        const participantPromises = spacesData.data.map(async (space) => {
-            try {
-                const participants = await this.getSpaceParticipants(space._id);
-                return {
-                    spaceId: space._id,
-                    participants: participants
-                };
-            } catch (error) {
-                console.warn(`Failed to fetch participants for space ${space._id}:`, error.message);
-                return {
-                    spaceId: space._id,
-                    participants: null
-                };
-            }
-        });
-
-        // Wait for all participants requests to complete
-        try {
-            const participantResults = await Promise.allSettled(participantPromises);
-            
-            // Create a map of participants by spaceId
-            const participantsMap = {};
-            participantResults.forEach((result) => {
-                if (result.status === 'fulfilled' && result.value) {
-                    participantsMap[result.value.spaceId] = result.value.participants;
-                }
-            });
-
-            // Enhance spaces data with participants
-            spacesData.data = spacesData.data.map(space => ({
-                ...space,
-                participantsData: participantsMap[space._id] || null
-            }));
-
-            console.log(`✅ Loaded ${spacesData.data.length} spaces with participant data`);
-            
-        } catch (error) {
-            console.warn('Some participant requests failed, continuing with spaces data only:', error);
-        }
-
+        
         return spacesData;
+    }
+
+    /**
+     * Start background participant loading for a set of spaces
+     * This runs independently and updates the UI as data becomes available
+     */
+    startBackgroundParticipantLoading(spaces, onParticipantLoaded = null) {
+        if (!spaces || spaces.length === 0) return;
+        
+        // Cancel any existing participant loading
+        this.cancelParticipantLoading();
+        
+        // Filter out spaces that already have participant data
+        const spacesToLoad = spaces.filter(space => 
+            !this.participantsCache[space._id] && space._id
+        );
+        
+        if (spacesToLoad.length === 0) {
+            console.log('✅ All spaces already have participant data or are invalid');
+            return;
+        }
+        
+        console.log(`🔄 Starting background participant loading for ${spacesToLoad.length} spaces`);
+        
+        // Set up abort controller for cancellation
+        this.participantLoadingAbortController = new AbortController();
+        
+        // Add to queue and start processing
+        this.participantQueue = spacesToLoad.map(space => ({
+            spaceId: space._id,
+            spaceTitle: space.title,
+            onLoaded: onParticipantLoaded
+        }));
+        
+        // Start serial processing
+        this.processParticipantQueue();
+    }
+
+    /**
+     * Process participant queue serially (one at a time)
+     */
+    async processParticipantQueue() {
+        if (this.isLoadingParticipants || this.participantQueue.length === 0) {
+            return;
+        }
+        
+        this.isLoadingParticipants = true;
+        
+        while (this.participantQueue.length > 0) {
+            // Check if loading was cancelled
+            if (this.participantLoadingAbortController?.signal.aborted) {
+                console.log('🛑 Participant loading was cancelled');
+                break;
+            }
+            
+            const item = this.participantQueue.shift();
+            
+            try {
+                console.log(`🔄 Loading participants for space: ${item.spaceId}`);
+                
+                const participantsData = await this.getSpaceParticipants(
+                    item.spaceId, 
+                    this.participantLoadingAbortController?.signal
+                );
+                
+                console.log(`✅ Loaded participants for space: ${item.spaceId} (${participantsData?.totalParticipants || 0} participants)`);
+                
+                // Notify callback if provided
+                if (item.onLoaded && typeof item.onLoaded === 'function') {
+                    item.onLoaded(item.spaceId, participantsData);
+                }
+                
+                // Small delay between requests to be nice to the server
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+            } catch (error) {
+                if (error.message === 'Request cancelled') {
+                    console.log('🛑 Participant loading cancelled');
+                    break;
+                } else {
+                    console.warn(`⚠️ Failed to load participants for space ${item.spaceId}:`, error.message);
+                    // Continue with next item on error
+                }
+            }
+        }
+        
+        this.isLoadingParticipants = false;
+        
+        if (this.participantQueue.length === 0) {
+            console.log('✅ Finished loading participants for all spaces');
+        }
+    }
+
+    /**
+     * Cancel any ongoing participant loading
+     */
+    cancelParticipantLoading() {
+        if (this.participantLoadingAbortController) {
+            console.log('🛑 Cancelling participant loading');
+            this.participantLoadingAbortController.abort();
+            this.participantLoadingAbortController = null;
+        }
+        
+        this.participantQueue = [];
+        this.isLoadingParticipants = false;
+    }
+
+    /**
+     * Check if participant loading is in progress
+     */
+    isLoadingParticipantsInBackground() {
+        return this.isLoadingParticipants;
+    }
+
+    /**
+     * Get participant loading progress
+     */
+    getParticipantLoadingProgress() {
+        const totalQueued = this.participantQueue.length;
+        const cached = Object.keys(this.participantsCache).length;
+        
+        return {
+            isLoading: this.isLoadingParticipants,
+            queueLength: totalQueued,
+            cachedCount: cached,
+            progress: totalQueued > 0 ? `${cached} loaded, ${totalQueued} remaining` : 'Complete'
+        };
     }
 
     async getFiles() {
@@ -144,7 +253,6 @@ class ApiService {
      * Extracts spaceId from filename
      */
     extractSpaceIdFromFilename(filename) {
-        // Remove common audio extensions and transcript extensions
         let cleanFilename = filename.replace(/\.(mp3|aac|m4a|mp4|json|csv)$/i, '');
         return cleanFilename.split('-')[0];
     }
@@ -236,10 +344,8 @@ class ApiService {
                 
                 console.log(`✅ Loaded ${totalAudioFiles} audio files for ${spacesWithAudio} spaces`);
                 console.log(`✅ Loaded ${spacesWithTranscription} transcription files (JSON/CSV)`);
-                Utils.showMessage(`Loaded ${totalAudioFiles} audio files and ${spacesWithTranscription} transcriptions`, CONFIG.MESSAGE_TYPES.SUCCESS);
             }
         } catch (error) {
-            Utils.showMessage(`Failed to load files: ${error.message}`);
             console.error('Files loading error:', error);
             throw error;
         }
@@ -305,19 +411,14 @@ class ApiService {
 
     /**
      * Utility method to enhance image quality
-     * @param {string} imageUrl - Original profile image URL
-     * @returns {string} Enhanced quality image URL
      */
     enhanceImageQuality(imageUrl) {
         if (!imageUrl) return null;
-        // Replace _normal. with _400x400. for better quality
         return imageUrl.replace('_normal.', '_400x400.');
     }
 
     /**
      * Gets cached participants data
-     * @param {string} spaceId - Space ID
-     * @returns {Object|null} Cached participants data or null
      */
     getCachedParticipants(spaceId) {
         return this.participantsCache[spaceId] || null;
