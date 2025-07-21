@@ -902,7 +902,7 @@ class Dashboard {
         if (hasAudio) {
             const firstAudio = audioFiles[0];
             const staticDownloadFilename = this.createDownloadFilename(space, firstAudio.filename);
-            actionsHTML += `<a href="${firstAudio.url}" download="${staticDownloadFilename}" class="btn btn-secondary">Listen</a>`;
+            actionsHTML += `<a href="${firstAudio.url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">Listen</a>`;
         }
         if (hasTranscriptLink) {
             actionsHTML += `<a href="${space.transcriptLink}" target="_blank" class="btn btn-secondary">Transcript</a>`;
