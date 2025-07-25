@@ -1,0 +1,76 @@
+/* Responsive Design */
+@media (max-width: 768px) {
+    .override-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .override-btn {
+        margin-top: 5px;
+    }
+
+    .container {
+        padding: 20px 10px;
+    }
+
+    .space-item {
+        flex-wrap: wrap;
+        padding: 12px;
+    }
+
+    .space-details {
+        width: 100%;
+        order: 1;
+        margin-left: 23px;
+        margin-bottom: 10px;
+    }
+    
+    .status-indicator {
+        position: absolute;
+    }
+
+    .space-title {
+        white-space: normal;
+    }
+
+    .space-actions {
+        order: 2;
+        width: 100%;
+        justify-content: flex-end;
+    }
+
+    /* Adjust participant avatars for mobile */
+    .participant-avatar {
+        width: 24px;
+        height: 24px;
+        margin-left: -6px;
+    }
+
+    .participant-avatar:first-child {
+        margin-left: 0;
+    }
+
+    .participant-avatars {
+        margin-top: 8px;
+    }
+
+    /* Modal adjustments for mobile */
+    .modal-content {
+        width: 95%;
+        margin: 10px;
+        max-height: 90vh;
+    }
+
+    .participants-modal-content {
+        max-height: 80vh;
+    }
+
+    .participant-item {
+        padding: 6px;
+    }
+
+    .participant-modal-avatar {
+        width: 32px;
+        height: 32px;
+    }
+}

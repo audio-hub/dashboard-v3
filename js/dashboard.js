@@ -45,8 +45,40 @@ class Dashboard {
         
         // Set up periodic participant queue check
         this.setupParticipantQueueMonitor();
+        this.setupFilterIntegration();
+    }
+    /**
+     * Setup filter integration
+     */
+    setupFilterIntegration() {
+        // Wait for filter manager to be available
+        const waitForFilters = () => {
+            if (window.filterManager) {
+                filterManager.setOnFilterChange((filters) => {
+                    this.applyFilters(filters);
+                });
+            } else {
+                setTimeout(waitForFilters, 100);
+            }
+        };
+        waitForFilters();
     }
 
+    /**
+     * Apply filters to displayed spaces
+     */
+    applyFilters(filters) {
+        if (!this.allSpaces || this.allSpaces.length === 0) return;
+        
+        const filteredSpaces = filterManager.applyFiltersToSpaces(this.allSpaces);
+        const sortedSpaces = this.sortSpaces(filteredSpaces);
+        this.displaySpaces(sortedSpaces, false);
+        
+        // Update participant tracking for filtered spaces
+        this.spacesNeedingParticipants.clear();
+        this.trackSpacesNeedingParticipants(sortedSpaces);
+        this.startEnhancedParticipantLoading(sortedSpaces);
+    }
     /**
      * Create a comprehensive loading indicator for background participant loading
      */
@@ -875,9 +907,13 @@ class Dashboard {
         // Add Privacy Info
         metaParts.push(`${privacyInfo.icon} ${privacyInfo.status}`);
 
-        // Add Anchor Info if it exists
         if (anchorInfo.hasAnchor) {
             metaParts.push(`${anchorInfo.icon} via ${anchorInfo.roleIcon} ${anchorInfo.displayText} (${anchorInfo.roleText})`);
+        }
+
+        // Add override indicator if applicable
+        if (space.isOverride) {
+            metaParts.push('<span class="override-icon">⚡ Override</span>');
         }
 
         // Add audio duration if available

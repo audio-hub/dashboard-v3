@@ -1,0 +1,164 @@
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #1a1a1a;
+        color: #e0e0e0;
+    }
+
+    /* Admin Override Section */
+    .admin-override-section {
+        background: #2a2a2a;
+        border-color: #3a3a3a;
+    }
+    
+    .override-input {
+        background: #333;
+        border-color: #555;
+        color: #e0e0e0;
+    }
+    
+    .override-input::placeholder {
+        color: #aaa;
+    }
+
+    /* Filter Accordion */
+    .filter-accordion {
+        background: #2a2a2a;
+        border-color: #3a3a3a;
+    }
+
+    .filter-toggle {
+        color: #e0e0e0;
+    }
+
+    .filter-toggle:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .filter-toggle::after {
+        color: #aaa;
+    }
+
+    .filter-panel {
+        background: #2a2a2a !important;
+        border-top-color: #3a3a3a;
+    }
+    
+    .filter-group label {
+        color: #e0e0e0;
+    }
+    
+    .filter-input, .filter-select {
+        background: #333;
+        border-color: #555;
+        color: #e0e0e0;
+    }
+    
+    .filter-input::placeholder {
+        color: #aaa;
+    }
+
+    /* Spaces Container */
+    .spaces-container {
+        background: #2a2a2a;
+        border: 1px solid #3a3a3a;
+    }
+    
+    .space-item {
+        background-color: #2a2a2a;
+        border-bottom: 1px solid #3a3a3a;
+    }
+    
+    .space-item:hover {
+        background-color: #333 !important;
+    }
+    
+    .space-title {
+        color: #e0e0e0 !important;
+    }
+    
+    .space-metadata {
+        color: #aaa !important;
+    }
+    
+    .space-metadata a {
+        color: #66b3ff !important;
+    }
+    
+    .space-metadata a:hover {
+        color: #99ccff !important;
+    }
+
+    /* Header */
+    .header h1 {
+        color: #fff !important;
+    }
+    
+    .header p {
+        color: #ccc !important;
+    }
+
+    /* Modal */
+    .modal-content {
+        background-color: #2a2a2a !important;
+        color: #e0e0e0 !important;
+    }
+    
+    .modal-close:hover {
+        color: #fff !important;
+    }
+
+    /* Buttons */
+    .btn-secondary {
+        color: #e0e0e0 !important;
+        border-color: #555 !important;
+        background-color: #333 !important;
+    }
+    
+    .btn-secondary:hover {
+        background-color: #444 !important;
+        border-color: #666 !important;
+        color: #fff !important;
+    }
+
+    /* Messages */
+    .loading, .error {
+        color: #aaa;
+    }
+
+    /* Participants */
+    .participant-avatar {
+        background-color: #333;
+        color: #aaa;
+        border-color: #555;
+    }
+    
+    .participant-avatars-empty {
+        color: #777;
+    }
+    
+    .participant-item {
+        background-color: #2a2a2a;
+    }
+    
+    .participant-item:hover {
+        background-color: #333;
+    }
+    
+    .participant-name {
+        color: #fff !important;
+    }
+    
+    .participants-role-section h4 {
+        color: #fff !important;
+        border-bottom: 1px solid #3a3a3a !important;
+    }
+    
+    .participants-modal-content h3 {
+        color: #fff !important;
+    }
+    
+    .participants-count {
+        color: #ccc !important;
+    }
+}

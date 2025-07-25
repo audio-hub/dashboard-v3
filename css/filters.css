@@ -1,0 +1,202 @@
+/* Filter Accordion */
+.filter-accordion {
+    background: #f8f9fa !important;
+    border: 1px solid #e9ecef;
+    border-radius: 6px;
+    margin-top: 40px;
+    margin-bottom: 20px;
+    overflow: visible;
+}
+
+.filter-toggle {
+    width: 100%;
+    background: #f8f9fa !important;
+    color: #2c3e50;
+    padding: 15px;
+    border: none;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color 0.2s ease;
+}
+
+.filter-toggle:hover {
+    background: #ecf0f1 !important;
+}
+
+.filter-toggle-text {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-toggle::after {
+    content: '▼';
+    font-size: 0.7rem;
+    transition: transform 0.2s ease;
+    color: #7f8c8d;
+}
+
+.filter-toggle.open::after {
+    transform: rotate(180deg);
+}
+
+.filter-toggle.open {
+    border-radius: 6px 6px 0 0;
+}
+
+.filter-panel {
+    display: none;
+    background: #f8f9fa !important;
+    padding: 15px;
+    border-top: 1px solid #e9ecef;
+    border-radius: 0 0 6px 6px;
+}
+
+.filter-panel.open {
+    display: block;
+}
+
+.filter-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+}
+
+.filter-group {
+    margin-bottom: 15px;
+}
+
+.filter-group:last-child {
+    margin-bottom: 0;
+}
+
+.filter-group label {
+    display: block;
+    font-weight: 500;
+    margin-bottom: 8px;
+    color: #2c3e50;
+    font-size: 0.9rem;
+}
+
+.filter-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    background: white !important;
+}
+
+.filter-input::placeholder {
+    color: #999;
+}
+
+.filter-select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    background: white !important;
+}
+
+.filter-switch {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #3498db;
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+/* Dark Mode Overrides - Force specific backgrounds */
+@media (prefers-color-scheme: dark) {
+    .filter-accordion {
+        background: #2a2a2a !important;
+        border-color: #3a3a3a !important;
+    }
+
+    .filter-toggle {
+        background: #2a2a2a !important;
+        color: #e0e0e0 !important;
+        border-radius: 6px 6px 0 0;
+    }
+
+    .filter-toggle:hover {
+        background: #333 !important;
+    }
+
+    .filter-toggle.open {
+        border-radius: 6px 6px 0 0;
+    }
+
+    .filter-toggle::after {
+        color: #aaa !important;
+    }
+
+    .filter-panel {
+        background: #2a2a2a !important;
+        border-top-color: #3a3a3a !important;
+        border-radius: 0 0 6px 6px;
+    }
+    
+    .filter-group label {
+        color: #e0e0e0 !important;
+    }
+    
+    .filter-input, .filter-select {
+        background: #333 !important;
+        border-color: #555 !important;
+        color: #e0e0e0 !important;
+    }
+    
+    .filter-input::placeholder {
+        color: #aaa !important;
+    }
+}
